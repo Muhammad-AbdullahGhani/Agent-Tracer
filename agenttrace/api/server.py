@@ -10,6 +10,7 @@ from agenttrace.api.routes_traces import router as traces_router
 from agenttrace.api.routes_incidents import router as incidents_router
 from agenttrace.api.routes_regression import router as regression_router
 from agenttrace.api.routes_stats import router as stats_router
+from agenttrace.api.routes_auth import router as auth_router
 
 def create_app() -> FastAPI:
     # Initialize DB tables
@@ -37,6 +38,7 @@ def create_app() -> FastAPI:
     )
 
     # Include API Routers
+    app.include_router(auth_router, prefix=settings.API_V1_PREFIX)
     app.include_router(traces_router, prefix=settings.API_V1_PREFIX)
     app.include_router(incidents_router, prefix=settings.API_V1_PREFIX)
     app.include_router(regression_router, prefix=settings.API_V1_PREFIX)
