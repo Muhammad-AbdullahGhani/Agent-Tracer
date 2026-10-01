@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: agenttrace-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: agenttrace
+      POSTGRES_PASSWORD: agenttrace_secret_password
+      POSTGRES_DB: agenttrace
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agenttrace -d agenttrace"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  agenttrace:
+    build: .
+    container_name: agenttrace-server
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+    environment:
+      AGENTTRACE_DB_URL: postgresql+psycopg://agenttrace:agenttrace_secret_password@db:5432/agenttrace
+      AGENTTRACE_LLM_PROVIDER: ${AGENTTRACE_LLM_PROVIDER:-heuristic}
+      AGENTTRACE_LLM_MODEL: ${AGENTTRACE_LLM_MODEL:-qwen2.5:7b}
+      AGENTTRACE_LLM_API_BASE: ${AGENTTRACE_LLM_API_BASE:-http://host.docker.internal:11434/v1}
+      AGENTTRACE_LLM_API_KEY: ${AGENTTRACE_LLM_API_KEY:-}
+    volumes:
+      - ./data:/app/data
+
+volumes:
+  postgres_data:

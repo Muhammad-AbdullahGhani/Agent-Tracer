@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentTrace - AI Agent Failure Investigator & Deterministic Replay</title>
+  <!-- Tailwind CSS & Lucide Icons -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              50: '#eef2ff',
+              500: '#6366f1',
+              600: '#4f46e5',
+              700: '#4338ca',
+            },
+            dark: {
+              900: '#0f172a',
+              850: '#131d36',
+              800: '#1e293b',
+              700: '#334155',
+            }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    code, pre, .font-mono { font-family: 'JetBrains Mono', monospace; }
+  </style>
+</head>
+<body class="bg-[#0b0f19] text-slate-100 min-h-screen flex flex-col">
+
+  <!-- Top Navigation -->
+  <header class="border-b border-slate-800 bg-[#0e1626]/80 backdrop-blur sticky top-0 z-40">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="h-9 w-9 rounded-lg bg-gradient-to-tr from-indigo-600 to-violet-500 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+          <i data-lucide="scan-eye" class="w-5 h-5 text-white"></i>
+        </div>
+        <div>
+          <div class="flex items-center space-x-2">
+            <span class="font-extrabold text-lg tracking-tight bg-gradient-to-r from-white via-indigo-200 to-indigo-400 bg-clip-text text-transparent">AgentTrace</span>
+            <span class="px-2 py-0.5 text-[10px] font-semibold bg-indigo-500/20 text-indigo-400 rounded-full border border-indigo-500/30">MVP</span>
+          </div>
+          <p class="text-[11px] text-slate-400">Deterministic Replay & Root-Cause Investigator</p>
+        </div>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="flex items-center space-x-1">
+        <button onclick="switchTab('incidents')" id="tab-incidents" class="px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 flex items-center space-x-2">
+          <i data-lucide="alert-octagon" class="w-4 h-4"></i>
+          <span>Incidents</span>
+        </button>
+        <button onclick="switchTab('traces')" id="tab-traces" class="px-3.5 py-1.5 rounded-md text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition-colors flex items-center space-x-2">
+          <i data-lucide="git-branch" class="w-4 h-4"></i>
+          <span>Traces</span>
+        </button>
+        <button onclick="switchTab('regressions')" id="tab-regressions" class="px-3.5 py-1.5 rounded-md text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition-colors flex items-center space-x-2">
+          <i data-lucide="shield-check" class="w-4 h-4"></i>
+          <span>Regression Suite</span>
+        </button>
+      </nav>
+
+      <!-- Status badge -->
+      <div class="flex items-center space-x-3">
+        <div class="flex items-center space-x-2 text-xs text-emerald-400 bg-emerald-500/10 px-3 py-1 rounded-full border border-emerald-500/20">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span>OpenTelemetry Engine Live</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-1 w-full space-y-8">
+
+    <!-- KPI Summary Row -->
+    <div class="grid grid-cols-1 md:grid-cols-5 gap-4" id="kpi-cards">
+      <div class="bg-[#131d36] border border-slate-800 rounded-xl p-4 shadow-sm">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Total Traces</span>
+          <i data-lucide="activity" class="w-4 h-4 text-indigo-400"></i>
+        </div>
+        <div class="mt-2 flex items-baseline space-x-2">
+          <span class="text-2xl font-bold text-white" id="stat-total-traces">-</span>
+          <span class="text-xs text-slate-500">runs</span>
+        </div>
+      </div>
+
+      <div class="bg-[#131d36] border border-slate-800 rounded-xl p-4 shadow-sm">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Failures Flagged</span>
+          <i data-lucide="alert-triangle" class="w-4 h-4 text-rose-400"></i>
+        </div>
+        <div class="mt-2 flex items-baseline space-x-2">
+          <span class="text-2xl font-bold text-rose-400" id="stat-total-failures">-</span>
+          <span class="text-xs text-slate-500">investigated</span>
+        </div>
+      </div>
+
+      <div class="bg-[#131d36] border border-slate-800 rounded-xl p-4 shadow-sm">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Deterministic Bugs</span>
+          <i data-lucide="check-circle-2" class="w-4 h-4 text-amber-400"></i>
+        </div>
+        <div class="mt-2 flex items-baseline space-x-2">
+          <span class="text-2xl font-bold text-amber-400" id="stat-deterministic">-</span>
+          <span class="text-xs text-emerald-400 font-medium">100% consistent</span>
+        </div>
+      </div>
+
+      <div class="bg-[#131d36] border border-slate-800 rounded-xl p-4 shadow-sm">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Non-Deterministic</span>
+          <i data-lucide="shuffle" class="w-4 h-4 text-purple-400"></i>
+        </div>
+        <div class="mt-2 flex items-baseline space-x-2">
+          <span class="text-2xl font-bold text-purple-400" id="stat-flaky">-</span>
+          <span class="text-xs text-purple-300 font-medium" id="stat-flake-rate">0% flake</span>
+        </div>
+      </div>
+
+      <div class="bg-[#131d36] border border-slate-800 rounded-xl p-4 shadow-sm">
+        <div class="flex items-center justify-between">
+          <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Regression Tests</span>
+          <i data-lucide="shield" class="w-4 h-4 text-emerald-400"></i>
+        </div>
+        <div class="mt-2 flex items-baseline space-x-2">
+          <span class="text-2xl font-bold text-emerald-400" id="stat-regressions">-</span>
+          <span class="text-xs text-slate-500">in CI suite</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB 1: INCIDENTS VIEW -->
+    <div id="view-incidents" class="space-y-6">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-bold text-white tracking-tight">Investigated Agent Incidents</h2>
+          <p class="text-sm text-slate-400">Deterministic replays evaluate consistency and diagnose exact root cause without firing live side-effects.</p>
+        </div>
+        <div class="flex items-center space-x-3">
+          <select id="filter-bucket" onchange="loadIncidents()" class="bg-slate-800 border border-slate-700 text-xs text-slate-300 rounded-lg px-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500">
+            <option value="">All Failure Buckets</option>
+            <option value="MODEL_DECISION_FAILURE">Model Decision Failure</option>
+            <option value="TOOL_DATA_AMBIGUITY">Tool Data Ambiguity</option>
+            <option value="MISSING_CONTEXT_FAILURE">Missing Context Failure</option>
+            <option value="NON_DETERMINISTIC">Non-Deterministic</option>
+            <option value="ENVIRONMENT_ISSUE">Environment Issue</option>
+          </select>
+          <button onclick="loadIncidents()" class="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white border border-slate-700 transition">
+            <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Incidents Table -->
+      <div class="bg-[#131d36] border border-slate-800 rounded-xl overflow-hidden shadow-lg">
+        <table class="w-full text-left text-sm text-slate-300">
+          <thead class="bg-slate-900/60 text-xs uppercase tracking-wider text-slate-400 border-b border-slate-800">
+            <tr>
+              <th class="py-3 px-4">Incident</th>
+              <th class="py-3 px-4">Agent</th>
+              <th class="py-3 px-4">Failure Classification</th>
+              <th class="py-3 px-4">Replay Consistency</th>
+              <th class="py-3 px-4">Confidence</th>
+              <th class="py-3 px-4">Status</th>
+              <th class="py-3 px-4 text-right">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="incidents-table-body" class="divide-y divide-slate-800/60 font-mono text-xs">
+            <tr>
+              <td colspan="7" class="py-8 text-center text-slate-500">Loading incidents...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 2: TRACES VIEW -->
+    <div id="view-traces" class="space-y-6 hidden">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-bold text-white tracking-tight">OpenTelemetry Traces</h2>
+          <p class="text-sm text-slate-400">Chronological history of tool calls, LLM reasoning spans, and state transitions.</p>
+        </div>
+        <button onclick="loadTraces()" class="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white border border-slate-700 transition">
+          <i data-lucide="refresh-cw" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="bg-[#131d36] border border-slate-800 rounded-xl overflow-hidden shadow-lg">
+        <table class="w-full text-left text-sm text-slate-300">
+          <thead class="bg-slate-900/60 text-xs uppercase tracking-wider text-slate-400 border-b border-slate-800">
+            <tr>
+              <th class="py-3 px-4">Trace ID</th>
+              <th class="py-3 px-4">Agent</th>
+              <th class="py-3 px-4">Status</th>
+              <th class="py-3 px-4">Spans</th>
+              <th class="py-3 px-4">Latency</th>
+              <th class="py-3 px-4">Timestamp</th>
+              <th class="py-3 px-4 text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody id="traces-table-body" class="divide-y divide-slate-800/60 font-mono text-xs">
+            <tr>
+              <td colspan="7" class="py-8 text-center text-slate-500">Loading traces...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- TAB 3: REGRESSION SUITE VIEW -->
+    <div id="view-regressions" class="space-y-6 hidden">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-xl font-bold text-white tracking-tight">Regression Test Suite</h2>
+          <p class="text-sm text-slate-400">Confirmed real bugs saved as mocked fixtures. Re-run on every deploy to ensure regressions never resurface.</p>
+        </div>
+        <button onclick="runRegressionSuite()" id="btn-run-regressions" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium rounded-lg text-sm shadow-lg shadow-emerald-600/20 flex items-center space-x-2 transition">
+          <i data-lucide="play" class="w-4 h-4"></i>
+          <span>Run Regression Suite Now</span>
+        </button>
+      </div>
+
+      <div id="regression-run-banner" class="hidden p-4 rounded-xl border"></div>
+
+      <div class="bg-[#131d36] border border-slate-800 rounded-xl overflow-hidden shadow-lg">
+        <table class="w-full text-left text-sm text-slate-300">
+          <thead class="bg-slate-900/60 text-xs uppercase tracking-wider text-slate-400 border-b border-slate-800">
+            <tr>
+              <th class="py-3 px-4">Fixture Name</th>
+              <th class="py-3 px-4">Agent</th>
+              <th class="py-3 px-4">Mocked Tools</th>
+              <th class="py-3 px-4">Last Status</th>
+              <th class="py-3 px-4">Last Run</th>
+            </tr>
+          </thead>
+          <tbody id="regression-table-body" class="divide-y divide-slate-800/60 font-mono text-xs">
+            <tr>
+              <td colspan="5" class="py-8 text-center text-slate-500">Loading regression fixtures...</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- Incident Details Modal Drawer -->
+  <div id="incident-modal" class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-[#11192e] border border-slate-700/80 rounded-2xl w-full max-w-5xl max-h-[92vh] flex flex-col shadow-2xl overflow-hidden">
+      
+      <!-- Modal Header -->
+      <div class="px-6 py-4 border-b border-slate-800 bg-[#0e1628] flex items-center justify-between">
+        <div class="flex items-center space-x-3">
+          <div class="p-2 rounded-lg bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+            <i data-lucide="microscope" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="flex items-center space-x-2">
+              <h3 class="text-base font-bold text-white" id="modal-incident-title">Incident #</h3>
+              <span id="modal-badge-bucket" class="px-2.5 py-0.5 rounded-full text-xs font-semibold"></span>
+            </div>
+            <p class="text-xs text-slate-400" id="modal-agent-name">Agent: -</p>
+          </div>
+        </div>
+
+        <div class="flex items-center space-x-3">
+          <button onclick="reinvestigateIncident()" id="btn-reinvestigate" class="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-medium flex items-center space-x-1.5 transition">
+            <i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i>
+            <span>Re-Run 10x Replay</span>
+          </button>
+          <button onclick="closeModal()" class="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal Body (Scrollable) -->
+      <div class="p-6 overflow-y-auto space-y-6 flex-1 text-sm">
+
+        <!-- Consistency & Classification Card -->
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div class="bg-[#16213e] p-4 rounded-xl border border-slate-800">
+            <span class="text-xs text-slate-400 font-semibold uppercase">Replay Consistency</span>
+            <div class="mt-2 flex items-baseline space-x-2">
+              <span class="text-2xl font-bold text-indigo-400" id="modal-consistency-score">0%</span>
+              <span class="text-xs text-slate-400" id="modal-consistency-label">Dominant</span>
+            </div>
+            <p class="text-[11px] text-slate-500 mt-1" id="modal-consistency-sub">Evaluated across recorded inputs</p>
+          </div>
+
+          <div class="bg-[#16213e] p-4 rounded-xl border border-slate-800">
+            <span class="text-xs text-slate-400 font-semibold uppercase">Diagnosis Confidence</span>
+            <div class="mt-2 flex items-baseline space-x-2">
+              <span class="text-2xl font-bold text-emerald-400" id="modal-confidence-score">0%</span>
+              <span class="text-xs text-slate-400">LLM Analysis</span>
+            </div>
+            <p class="text-[11px] text-slate-500 mt-1" id="modal-divergence-step">Diverged at: -</p>
+          </div>
+
+          <div class="bg-[#16213e] p-4 rounded-xl border border-slate-800">
+            <span class="text-xs text-slate-400 font-semibold uppercase">Investigation Verdict</span>
+            <div class="mt-2">
+              <span class="text-base font-bold text-white block" id="modal-verdict-text">-</span>
+            </div>
+            <span class="text-[11px] px-2 py-0.5 mt-1 inline-block rounded font-medium" id="modal-human-review-tag"></span>
+          </div>
+        </div>
+
+        <!-- AI Root Cause Diagnosis Card -->
+        <div class="bg-gradient-to-br from-[#151f38] to-[#121c32] p-5 rounded-xl border border-indigo-500/20 shadow-lg space-y-4">
+          <div class="flex items-center space-x-2">
+            <div class="p-1.5 rounded-md bg-indigo-500/20 text-indigo-400">
+              <i data-lucide="bot" class="w-4 h-4"></i>
+            </div>
+            <h4 class="font-semibold text-white text-sm">Root Cause Diagnosis</h4>
+          </div>
+
+          <p class="text-slate-300 leading-relaxed text-xs sm:text-sm bg-slate-900/50 p-3.5 rounded-lg border border-slate-800" id="modal-explanation">
+            No diagnosis available.
+          </p>
+
+          <div>
+            <h5 class="text-xs font-semibold text-indigo-300 mb-1.5 flex items-center space-x-1.5">
+              <i data-lucide="wrench" class="w-3.5 h-3.5"></i>
+              <span>Recommended Remediation</span>
+            </h5>
+            <p class="text-xs text-slate-400 bg-slate-900/40 p-3 rounded-lg border border-slate-800/80" id="modal-remediation">
+              -
+            </p>
+          </div>
+
+          <!-- Evidence Span -->
+          <div id="evidence-container">
+            <h5 class="text-xs font-semibold text-amber-300 mb-1.5 flex items-center space-x-1.5">
+              <i data-lucide="code" class="w-3.5 h-3.5"></i>
+              <span>Offending Evidence Span</span>
+            </h5>
+            <pre class="bg-[#090d16] text-amber-200/90 text-xs p-3 rounded-lg overflow-x-auto border border-amber-500/20 max-h-40" id="modal-evidence-span">{}</pre>
+          </div>
+        </div>
+
+        <!-- Deterministic Replay Matrix -->
+        <div class="space-y-3">
+          <div class="flex items-center justify-between">
+            <h4 class="font-semibold text-white text-sm flex items-center space-x-2">
+              <i data-lucide="repeat" class="w-4 h-4 text-indigo-400"></i>
+              <span>Deterministic Replay Matrix (10 Mocked Runs)</span>
+            </h4>
+            <span class="text-xs text-slate-400">Side-effects safely intercepted & mocked</span>
+          </div>
+
+          <div id="modal-replay-runs-grid" class="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+            <!-- Run badges generated dynamically -->
+          </div>
+        </div>
+
+        <!-- Original Trace Timeline -->
+        <div class="space-y-3">
+          <h4 class="font-semibold text-white text-sm flex items-center space-x-2">
+            <i data-lucide="git-commit" class="w-4 h-4 text-indigo-400"></i>
+            <span>Original Incident Trace Timeline</span>
+          </h4>
+          <div id="modal-timeline" class="space-y-2 font-mono text-xs">
+            <!-- Spans rendered dynamically -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Modal Footer (Actions) -->
+      <div class="px-6 py-4 border-t border-slate-800 bg-[#0e1628] flex items-center justify-between">
+        <div class="text-xs text-slate-400">
+          Developer Confirmation & CI Regression Suite
+        </div>
+        <div class="flex items-center space-x-3">
+          <button onclick="submitFeedback('FALSE_POSITIVE')" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-xs font-medium transition">
+            Mark False Positive
+          </button>
+          <button onclick="submitFeedback('CONFIRMED_BUG')" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold shadow-lg shadow-emerald-600/20 flex items-center space-x-1.5 transition">
+            <i data-lucide="check" class="w-4 h-4"></i>
+            <span>Confirm Real Bug & Add to CI Regression Suite</span>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <script>
+    let activeTab = 'incidents';
+    let currentIncidentId = null;
+
+    function switchTab(tab) {
+      activeTab = tab;
+      ['incidents', 'traces', 'regressions'].forEach(t => {
+        document.getElementById(`view-${t}`).classList.add('hidden');
+        document.getElementById(`tab-${t}`).className = 'px-3.5 py-1.5 rounded-md text-sm font-medium text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition-colors flex items-center space-x-2';
+      });
+
+      document.getElementById(`view-${tab}`).classList.remove('hidden');
+      document.getElementById(`tab-${tab}`).className = 'px-3.5 py-1.5 rounded-md text-sm font-medium transition-colors bg-indigo-600/20 text-indigo-300 border border-indigo-500/30 flex items-center space-x-2';
+
+      if (tab === 'incidents') loadIncidents();
+      if (tab === 'traces') loadTraces();
+      if (tab === 'regressions') loadRegressions();
+      lucide.createIcons();
+    }
+
+    async function loadStats() {
+      try {
+        const res = await fetch('/api/stats');
+        const data = await res.json();
+        document.getElementById('stat-total-traces').innerText = data.total_traces;
+        document.getElementById('stat-total-failures').innerText = data.total_failures;
+        document.getElementById('stat-deterministic').innerText = data.deterministic_count;
+        document.getElementById('stat-flaky').innerText = data.non_deterministic_count;
+        document.getElementById('stat-flake-rate').innerText = `${data.flake_rate_percent}% flake`;
+        document.getElementById('stat-regressions').innerText = data.active_regressions;
+      } catch (e) {
+        console.error("Stats load error", e);
+      }
+    }
+
+    function getBucketBadge(bucket) {
+      const b = bucket || "UNDETERMINED";
+      if (b === "MODEL_DECISION_FAILURE") {
+        return `<span class="px-2 py-0.5 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded text-[11px] font-semibold">Model Decision Failure</span>`;
+      } else if (b === "TOOL_DATA_AMBIGUITY") {
+        return `<span class="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded text-[11px] font-semibold">Tool Data Ambiguity</span>`;
+      } else if (b === "MISSING_CONTEXT_FAILURE") {
+        return `<span class="px-2 py-0.5 bg-sky-500/20 text-sky-300 border border-sky-500/30 rounded text-[11px] font-semibold">Missing Context Failure</span>`;
+      } else if (b === "NON_DETERMINISTIC") {
+        return `<span class="px-2 py-0.5 bg-purple-500/20 text-purple-300 border border-purple-500/30 rounded text-[11px] font-semibold">Non-Deterministic Flake</span>`;
+      } else if (b === "ENVIRONMENT_ISSUE") {
+        return `<span class="px-2 py-0.5 bg-orange-500/20 text-orange-300 border border-orange-500/30 rounded text-[11px] font-semibold">Environment Issue</span>`;
+      }
+      return `<span class="px-2 py-0.5 bg-slate-700 text-slate-300 rounded text-[11px]">${b}</span>`;
+    }
+
+    async function loadIncidents() {
+      const bucket = document.getElementById('filter-bucket').value;
+      const url = bucket ? `/api/incidents?failure_bucket=${bucket}` : '/api/incidents';
+      try {
+        const res = await fetch(url);
+        const incidents = await res.json();
+        const tbody = document.getElementById('incidents-table-body');
+        if (incidents.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-500">No incidents recorded yet.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = incidents.map(inc => {
+          const consistencyPct = Math.round(inc.consistency_score * 100);
+          const confPct = Math.round(inc.confidence_score * 100);
+          const isDeterministic = inc.consistency_score >= 1.0;
+          return `
+            <tr class="hover:bg-slate-800/40 transition">
+              <td class="py-3 px-4 text-white font-bold">#${inc.id}</td>
+              <td class="py-3 px-4 font-sans text-slate-300">${inc.agent_name}</td>
+              <td class="py-3 px-4">${getBucketBadge(inc.failure_bucket)}</td>
+              <td class="py-3 px-4">
+                <div class="flex items-center space-x-2">
+                  <span class="font-bold ${isDeterministic ? 'text-emerald-400' : 'text-purple-400'}">${consistencyPct}%</span>
+                  <div class="w-16 bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                    <div class="h-full ${isDeterministic ? 'bg-emerald-500' : 'bg-purple-500'}" style="width: ${consistencyPct}%"></div>
+                  </div>
+                </div>
+              </td>
+              <td class="py-3 px-4 text-slate-300">${confPct}%</td>
+              <td class="py-3 px-4">
+                <span class="px-2 py-0.5 text-[10px] rounded font-semibold ${inc.status === 'CONFIRMED_BUG' ? 'bg-emerald-500/20 text-emerald-400' : (inc.status === 'CLASSIFIED' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-amber-500/20 text-amber-400')}">
+                  ${inc.status}
+                </span>
+              </td>
+              <td class="py-3 px-4 text-right">
+                <button onclick="openIncident(${inc.id})" class="px-3 py-1 bg-indigo-600/30 hover:bg-indigo-600 text-indigo-300 hover:text-white rounded border border-indigo-500/40 text-xs transition">
+                  Investigate
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (e) {
+        console.error("Error loading incidents", e);
+      }
+    }
+
+    async function loadTraces() {
+      try {
+        const res = await fetch('/api/traces');
+        const traces = await res.json();
+        const tbody = document.getElementById('traces-table-body');
+        if (traces.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="7" class="py-8 text-center text-slate-500">No traces found.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = traces.map(t => {
+          const isSuccess = t.status === "SUCCESS";
+          return `
+            <tr class="hover:bg-slate-800/40 transition">
+              <td class="py-3 px-4 text-indigo-400">${t.trace_id.substring(0, 16)}...</td>
+              <td class="py-3 px-4 font-sans text-slate-300">${t.agent_name}</td>
+              <td class="py-3 px-4">
+                <span class="px-2 py-0.5 rounded text-[10px] font-semibold ${isSuccess ? 'bg-emerald-500/20 text-emerald-400' : 'bg-rose-500/20 text-rose-400'}">
+                  ${t.status}
+                </span>
+              </td>
+              <td class="py-3 px-4 text-slate-400">${t.spans_count} spans</td>
+              <td class="py-3 px-4 text-slate-400">${t.latency_ms} ms</td>
+              <td class="py-3 px-4 text-slate-500 text-[11px]">${t.created_at ? t.created_at.replace('T', ' ').substring(0, 19) : '-'}</td>
+              <td class="py-3 px-4 text-right">
+                <button onclick="viewTraceDetail('${t.trace_id}')" class="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-xs">
+                  View
+                </button>
+              </td>
+            </tr>
+          `;
+        }).join('');
+      } catch (e) {
+        console.error("Error loading traces", e);
+      }
+    }
+
+    async function loadRegressions() {
+      try {
+        const res = await fetch('/api/regression/fixtures');
+        const fixtures = await res.json();
+        const tbody = document.getElementById('regression-table-body');
+        if (fixtures.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-slate-500">No regression fixtures active. Confirm real bugs in Incidents to export fixtures!</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = fixtures.map(f => {
+          const isPass = f.last_run_status === "PASS";
+          return `
+            <tr class="hover:bg-slate-800/40 transition">
+              <td class="py-3 px-4 text-white font-bold">${f.name}</td>
+              <td class="py-3 px-4 font-sans text-slate-300">${f.agent_name}</td>
+              <td class="py-3 px-4 text-slate-400">${f.mocked_tools_count} mocked tools</td>
+              <td class="py-3 px-4">
+                <span class="px-2 py-0.5 rounded text-[10px] font-semibold ${isPass ? 'bg-emerald-500/20 text-emerald-400' : (f.last_run_status === 'FAIL' ? 'bg-rose-500/20 text-rose-400' : 'bg-slate-700 text-slate-300')}">
+                  ${f.last_run_status}
+                </span>
+              </td>
+              <td class="py-3 px-4 text-slate-500 text-[11px]">${f.last_run_at ? f.last_run_at.replace('T', ' ').substring(0, 19) : 'Not run yet'}</td>
+            </tr>
+          `;
+        }).join('');
+      } catch (e) {
+        console.error("Error loading regressions", e);
+      }
+    }
+
+    async function runRegressionSuite() {
+      const btn = document.getElementById('btn-run-regressions');
+      btn.disabled = true;
+      btn.innerHTML = `<i data-lucide="loader" class="w-4 h-4 animate-spin"></i><span>Running Suite...</span>`;
+      lucide.createIcons();
+
+      try {
+        const res = await fetch('/api/regression/run', { method: 'POST' });
+        const data = await res.json();
+        const banner = document.getElementById('regression-run-banner');
+        banner.classList.remove('hidden');
+        if (data.failed === 0) {
+          banner.className = 'p-4 rounded-xl border bg-emerald-500/10 border-emerald-500/30 text-emerald-300 text-sm flex items-center justify-between';
+          banner.innerHTML = `<span><strong>All ${data.passed} tests passed!</strong> No regressions resurfaced in CI suite.</span>`;
+        } else {
+          banner.className = 'p-4 rounded-xl border bg-rose-500/10 border-rose-500/30 text-rose-300 text-sm flex items-center justify-between';
+          banner.innerHTML = `<span><strong>${data.failed} regression(s) resurfaced!</strong> Automatically queued new incident for replay investigation.</span>`;
+        }
+        loadRegressions();
+        loadStats();
+      } catch (e) {
+        alert("Failed to run regression suite: " + e);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<i data-lucide="play" class="w-4 h-4"></i><span>Run Regression Suite Now</span>`;
+        lucide.createIcons();
+      }
+    }
+
+    async function openIncident(incidentId) {
+      currentIncidentId = incidentId;
+      document.getElementById('incident-modal').classList.remove('hidden');
+
+      try {
+        const res = await fetch(`/api/incidents/${incidentId}`);
+        const inc = await res.json();
+
+        document.getElementById('modal-incident-title').innerText = `Incident #${inc.id} (${inc.agent_name})`;
+        document.getElementById('modal-badge-bucket').innerHTML = getBucketBadge(inc.failure_bucket);
+        document.getElementById('modal-agent-name').innerText = `Trace: ${inc.trace_id}`;
+
+        const consistencyPct = Math.round(inc.consistency_score * 100);
+        document.getElementById('modal-consistency-score').innerText = `${consistencyPct}%`;
+        document.getElementById('modal-confidence-score').innerText = `${Math.round(inc.confidence_score * 100)}%`;
+        document.getElementById('modal-divergence-step').innerText = `Diverged at: ${inc.divergence_step_name || 'N/A'}`;
+        document.getElementById('modal-verdict-text').innerText = inc.failure_bucket;
+
+        const hrTag = document.getElementById('modal-human-review-tag');
+        if (inc.needs_human_review) {
+          hrTag.className = "text-[11px] px-2 py-0.5 mt-1 inline-block rounded font-medium bg-amber-500/20 text-amber-300 border border-amber-500/30";
+          hrTag.innerText = "Escalated to Human Review";
+        } else {
+          hrTag.className = "text-[11px] px-2 py-0.5 mt-1 inline-block rounded font-medium bg-emerald-500/20 text-emerald-400 border border-emerald-500/30";
+          hrTag.innerText = "Auto-Classified (Confidence Above Threshold)";
+        }
+
+        document.getElementById('modal-explanation').innerText = inc.explanation || "No explanation generated.";
+        document.getElementById('modal-remediation').innerText = inc.remediation || "No remediation provided.";
+        document.getElementById('modal-evidence-span').innerText = JSON.stringify(inc.evidence_span || {}, null, 2);
+
+        // Render Replay Runs Grid
+        const runsGrid = document.getElementById('modal-replay-runs-grid');
+        const latestJob = inc.replay_jobs && inc.replay_jobs.length > 0 ? inc.replay_jobs[inc.replay_jobs.length - 1] : null;
+        if (latestJob && latestJob.runs) {
+          runsGrid.innerHTML = latestJob.runs.map(r => {
+            const isSuccess = r.status === "SUCCESS";
+            return `
+              <div class="bg-slate-900/80 p-2.5 rounded-lg border ${isSuccess ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-rose-500/30 bg-rose-500/5'} text-[11px]">
+                <div class="flex items-center justify-between font-mono">
+                  <span class="font-bold text-white">Run #${r.run_index}</span>
+                  <span class="font-semibold ${isSuccess ? 'text-emerald-400' : 'text-rose-400'}">${r.status}</span>
+                </div>
+                <div class="text-[10px] text-slate-400 mt-1 truncate font-mono">${r.outcome_signature}</div>
+              </div>
+            `;
+          }).join('');
+        } else {
+          runsGrid.innerHTML = `<div class="col-span-5 text-center text-xs text-slate-500 py-3">No replay runs yet. Click "Re-Run 10x Replay" to investigate.</div>`;
+        }
+
+        // Render Timeline Spans
+        const timeline = document.getElementById('modal-timeline');
+        if (inc.trace && inc.trace.spans) {
+          timeline.innerHTML = inc.trace.spans.map(s => {
+            const isError = s.status_code === "ERROR";
+            return `
+              <div class="p-2.5 rounded-lg border ${isError ? 'border-rose-500/40 bg-rose-500/10' : 'border-slate-800 bg-slate-900/60'} flex items-center justify-between">
+                <div class="flex items-center space-x-2.5">
+                  <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold ${s.is_side_effect ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30' : 'bg-slate-800 text-slate-400'}">
+                    ${s.is_side_effect ? 'SIDE-EFFECT' : s.kind}
+                  </span>
+                  <span class="font-bold text-white">${s.name}</span>
+                </div>
+                <div class="flex items-center space-x-3 text-slate-400 text-[11px]">
+                  <span>${s.duration_ms}ms</span>
+                  <span class="${isError ? 'text-rose-400 font-bold' : 'text-emerald-400'}">${s.status_code}</span>
+                </div>
+              </div>
+            `;
+          }).join('');
+        }
+
+        lucide.createIcons();
+      } catch (e) {
+        console.error("Error opening incident", e);
+      }
+    }
+
+    async function reinvestigateIncident() {
+      if (!currentIncidentId) return;
+      const btn = document.getElementById('btn-reinvestigate');
+      btn.disabled = true;
+      btn.innerHTML = `<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i><span>Running 10x Replay...</span>`;
+      lucide.createIcons();
+
+      try {
+        await fetch(`/api/incidents/${currentIncidentId}/investigate`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({n_replays: 10})
+        });
+        openIncident(currentIncidentId);
+        loadIncidents();
+        loadStats();
+      } catch (e) {
+        alert("Replay investigation failed: " + e);
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = `<i data-lucide="rotate-cw" class="w-3.5 h-3.5"></i><span>Re-Run 10x Replay</span>`;
+        lucide.createIcons();
+      }
+    }
+
+    async function submitFeedback(action) {
+      if (!currentIncidentId) return;
+      try {
+        const res = await fetch(`/api/incidents/${currentIncidentId}/feedback`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({action: action, export_pytest: true})
+        });
+        const data = await res.json();
+        alert(data.message + (data.pytest_path ? `\nExported CI Pytest fixture: ${data.pytest_path}` : ''));
+        closeModal();
+        loadIncidents();
+        loadRegressions();
+        loadStats();
+      } catch (e) {
+        alert("Failed to submit feedback: " + e);
+      }
+    }
+
+    function closeModal() {
+      document.getElementById('incident-modal').classList.add('hidden');
+      currentIncidentId = null;
+    }
+
+    // Initialize on load
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      loadStats();
+      loadIncidents();
+    });
+  </script>
+</body>
+</html>
