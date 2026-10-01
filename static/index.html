@@ -269,16 +269,16 @@
         confidenceScore: 40,
         dominantCount: 4,
         replaysTotal: 10,
-        dominantOutcome: "Varies run to run (4 failed, 6 passed)",
+        dominantOutcome: "Varies run to run (4 reproduced failure, 6 diverged)",
         replays: [
           { index: 1, status: "reproduced_failure", latencyMs: 210.1, signature: "FAIL_wh_east_invalid", summary: "Selected unverified warehouse East-B", evidenceSpanRef: "span_branch_flaky" },
           { index: 2, status: "divergent_pass",   latencyMs: 198.5, signature: "PASS_wh_central",      summary: "Selected correct Central hub", evidenceSpanRef: "span_branch_flaky" },
           { index: 3, status: "reproduced_failure", latencyMs: 205.3, signature: "FAIL_wh_east_invalid", summary: "Selected unverified warehouse East-B", evidenceSpanRef: "span_branch_flaky" },
-          { index: 4, status: "divergent_pass",   latencyMs: 201.2, signature: "PASS_wh_central",      summary: "Selected correct Central hub", evidenceSpanRef: "span_branch_flaky" },
+          { index: 4, status: "divergent_error",  latencyMs: 216.2, signature: "ERR_wh_timeout",       summary: "Standby ping timeout on West-A fallback", evidenceSpanRef: "span_branch_flaky" },
           { index: 5, status: "divergent_pass",   latencyMs: 199.0, signature: "PASS_wh_central",      summary: "Selected correct Central hub", evidenceSpanRef: "span_branch_flaky" },
           { index: 6, status: "reproduced_failure", latencyMs: 208.4, signature: "FAIL_wh_east_invalid", summary: "Selected unverified warehouse East-B", evidenceSpanRef: "span_branch_flaky" },
           { index: 7, status: "divergent_pass",   latencyMs: 202.0, signature: "PASS_wh_central",      summary: "Selected correct Central hub", evidenceSpanRef: "span_branch_flaky" },
-          { index: 8, status: "divergent_pass",   latencyMs: 197.8, signature: "PASS_wh_central",      summary: "Selected correct Central hub", evidenceSpanRef: "span_branch_flaky" },
+          { index: 8, status: "divergent_error",  latencyMs: 214.8, signature: "ERR_wh_unreachable",   summary: "Alternate unverified standby branch East-C", evidenceSpanRef: "span_branch_flaky" },
           { index: 9, status: "reproduced_failure", latencyMs: 207.1, signature: "FAIL_wh_east_invalid", summary: "Selected unverified warehouse East-B", evidenceSpanRef: "span_branch_flaky" },
           { index: 10, status: "divergent_pass",   latencyMs: 200.4, signature: "PASS_wh_central",      summary: "Selected correct Central hub", evidenceSpanRef: "span_branch_flaky" },
         ],
@@ -948,6 +948,22 @@
         }
       };
 
+      const getTickColor = (run, currentIncident) => {
+        if (run.status === "reproduced_failure") {
+          return "#C2542E"; // Alert rust (matches original failure)
+        }
+        if (run.status === "divergent_error" || run.status === "divergent_ambiguous") {
+          return "#E8A33D"; // Signal amber (divergent/flaky error)
+        }
+        if (currentIncident && currentIncident.failureBucket === "Non-deterministic flake") {
+          return "#E8A33D"; // Signal amber (stochastic divergence from failure)
+        }
+        if (run.status === "divergent_pass" || run.status === "passed") {
+          return "#232B3B"; // Recessed dark slate (passed without failure)
+        }
+        return "#252B37";
+      };
+
       const getStatusBadgeStyle = (status) => {
         switch (status) {
           case "Needs review":
@@ -1066,21 +1082,24 @@
             <div className="px-4 py-3 border-b border-[#252B37] flex items-center justify-between">
               <div className="flex items-center space-x-2.5">
                 <div className="w-2.5 h-2.5 rounded-full bg-[#4FB8A6] ring-4 ring-[#4FB8A6]/20"></div>
-                <span className="font-semibold text-sm tracking-tight text-[#F6F4EF]">AgentTrace</span>
+                <span className="font-sans font-bold text-sm tracking-tight text-[#F6F4EF]">AgentTrace</span>
                 <span className="font-mono text-[10px] text-[#4FB8A6] bg-[#1A1E27] px-1.5 py-0.5 rounded border border-[#252B37]">live</span>
               </div>
               
               {/* User Session & Logout */}
-              <div className="flex items-center space-x-2 text-[11px] font-mono">
-                <span className="text-[#8B93A3] truncate max-w-[110px]" title={currentUser.email}>
-                  {currentUser.email.split('@')[0]}
-                </span>
+              <div className="flex items-center space-x-2.5">
+                <div className="flex items-center space-x-1.5 text-xs text-[#8B93A3]">
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#4FB8A6]"></span>
+                  <span className="font-mono text-[11px] text-[#F6F4EF]" title={currentUser.email}>
+                    {currentUser.email.split('@')[0]}
+                  </span>
+                </div>
                 <button
                   onClick={handleLogout}
                   title="Sign out of investigator session"
-                  className="text-[#8B93A3] hover:text-[#C2542E] transition-colors"
+                  className="px-2 py-0.5 rounded text-[11px] font-sans font-medium text-[#8B93A3] hover:text-[#F6F4EF] bg-[#1A1E27] hover:bg-[#252B37] border border-[#252B37] transition-colors"
                 >
-                  [exit]
+                  Sign out
                 </button>
               </div>
             </div>
@@ -1093,7 +1112,7 @@
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   placeholder="Search by ID, agent, or symptom..."
-                  className="w-full bg-[#1A1E27] text-xs font-mono text-[#F6F4EF] placeholder-[#8B93A3] px-3 py-2 rounded border border-[#252B37] focus:outline-none focus:border-[#4FB8A6] transition-colors"
+                  className="w-full bg-[#1A1E27] text-xs font-mono text-[#F6F4EF] placeholder:font-sans placeholder-[#8B93A3] px-3 py-2 rounded border border-[#252B37] focus:outline-none focus:border-[#4FB8A6] transition-colors"
                 />
                 {searchQuery && (
                   <button 
@@ -1115,7 +1134,7 @@
                   <button
                     key={statusKey}
                     onClick={() => setActiveStatusFilter(statusKey)}
-                    className={`px-2 py-1 rounded font-medium whitespace-nowrap transition-colors flex items-center space-x-1.5 ${
+                    className={`px-2 py-1 rounded font-sans font-medium whitespace-nowrap transition-colors flex items-center space-x-1.5 ${
                       isActive
                         ? "bg-[#1A1E27] text-[#F6F4EF] border border-[#343B4A]"
                         : "text-[#8B93A3] hover:text-[#F6F4EF] hover:bg-[#1A1E27]/50"
@@ -1133,13 +1152,12 @@
             {/* Flat List (Not cards) */}
             <div className="flex-1 overflow-y-auto divide-y divide-[#202532]">
               {filteredIncidents.length === 0 ? (
-                <div className="p-6 text-center text-xs font-mono text-[#8B93A3]">
+                <div className="p-6 text-center text-xs font-sans text-[#8B93A3]">
                   No unresolved failures
                 </div>
               ) : (
                 filteredIncidents.map(inc => {
                   const isSelected = inc.id === incident.id;
-                  const isFlaky = inc.failureBucket === "Non-deterministic flake";
                   
                   return (
                     <div
@@ -1160,7 +1178,7 @@
                         <span className="font-mono text-[11px] text-[#8B93A3]">{inc.agentName}</span>
                       </div>
 
-                      <p className="text-xs text-[#8B93A3] mt-1 line-clamp-1 leading-snug">
+                      <p className="font-sans text-xs text-[#8B93A3] mt-1 line-clamp-1 leading-snug">
                         {inc.title}
                       </p>
 
@@ -1172,9 +1190,7 @@
                               key={idx}
                               className="w-1.5 h-2.5 rounded-[1px]"
                               style={{
-                                backgroundColor: r.status === "reproduced_failure"
-                                  ? (isFlaky ? "#E8A33D" : "#C2542E")
-                                  : "#3A4354"
+                                backgroundColor: getTickColor(r, inc)
                               }}
                             />
                           ))}
@@ -1185,7 +1201,7 @@
                             {inc.dominantCount}/{inc.replaysTotal}
                           </span>
                           <span
-                            className="font-mono text-[10px] px-1.5 py-0.5 rounded border"
+                            className="font-sans text-[10px] font-medium px-1.5 py-0.5 rounded border"
                             style={getStatusBadgeStyle(inc.status)}
                           >
                             {inc.status}
@@ -1209,7 +1225,7 @@
             <header className="px-8 py-5 border-b border-[#252B37] bg-[#141720]">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-3">
-                  <span className="font-mono text-base font-bold text-[#F6F4EF]">{incident.id}</span>
+                  <span className="font-mono text-base font-bold text-[#4FB8A6]">{incident.id}</span>
                   <span className="text-[#8B93A3]">•</span>
                   <span className="font-mono text-xs text-[#8B93A3]">{incident.agentName} {incident.version}</span>
                   <span className="text-[#8B93A3]">•</span>
@@ -1221,7 +1237,7 @@
                 <div className="flex items-center space-x-2">
                   <span className="font-mono text-xs text-[#8B93A3]">{incident.timestamp}</span>
                   <span
-                    className="font-mono text-xs px-2.5 py-1 rounded border font-medium"
+                    className="font-sans text-xs px-2.5 py-0.5 rounded border font-medium"
                     style={getStatusBadgeStyle(incident.status)}
                   >
                     {incident.status}
@@ -1229,7 +1245,7 @@
                 </div>
               </div>
 
-              <h1 className="text-lg font-medium text-[#F6F4EF] mt-2.5">
+              <h1 className="font-sans text-xl font-bold text-[#F6F4EF] tracking-tight leading-snug mt-2.5">
                 {incident.title}
               </h1>
             </header>
@@ -1239,87 +1255,117 @@
 
               {/* =====================================================================
                   HERO OBJECT: THE REPLAY STRIP
-                  Horizontal row of N ticks, each colored by outcome
+                  Continuous horizontal row of N ticks, each colored by outcome
                   ===================================================================== */}
               <section className="bg-[#1A1E27] border border-[#252B37] rounded-lg p-5">
                 <div className="flex items-center justify-between mb-3">
                   <div className="flex items-center space-x-2">
-                    <span className="font-mono text-xs font-semibold text-[#F6F4EF]">
-                      replay strip
+                    <span className="font-sans text-xs font-semibold text-[#8B93A3]">
+                      Replay strip
                     </span>
-                    <span className="font-mono text-xs text-[#8B93A3]">
+                    <span className="font-sans text-xs text-[#8B93A3]">
                       ({incident.replaysTotal} sandbox runs against recorded inputs)
                     </span>
                   </div>
 
-                  <div className="flex items-center space-x-4 text-[11px] font-mono text-[#8B93A3]">
+                  <div className="flex items-center space-x-4 text-xs font-sans text-[#8B93A3]">
                     <span className="flex items-center space-x-1.5">
-                      <span className="w-2 h-2 rounded-[1px] bg-[#C2542E]"></span>
+                      <span className="w-2.5 h-2.5 rounded-[1px] bg-[#C2542E]"></span>
                       <span>reproduced failure</span>
                     </span>
                     <span className="flex items-center space-x-1.5">
-                      <span className="w-2 h-2 rounded-[1px] bg-[#E8A33D]"></span>
+                      <span className="w-2.5 h-2.5 rounded-[1px] bg-[#E8A33D]"></span>
                       <span>divergent / flaky</span>
                     </span>
                     <span className="flex items-center space-x-1.5">
-                      <span className="w-2 h-2 rounded-[1px] bg-[#3A4354]"></span>
+                      <span className="w-2.5 h-2.5 rounded-[1px] bg-[#232B3B] border border-[#3A4354]"></span>
                       <span>passed</span>
                     </span>
                   </div>
                 </div>
 
-                {/* Ticks Row */}
-                <div className="relative pt-2 pb-1">
-                  <div className="grid grid-cols-10 gap-2 h-14 bg-[#11141B] p-2 rounded border border-[#252B37]">
-                    {incident.replays.map((run) => {
-                      const isSelected = selectedTickIndex === run.index;
-                      let tickBg = "#3A4354"; // passed
-                      if (run.status === "reproduced_failure") {
-                        tickBg = incident.failureBucket === "Non-deterministic flake" ? "#E8A33D" : "#C2542E";
-                      } else if (run.status === "divergent_pass" || run.status === "divergent_error") {
-                        tickBg = "#E8A33D";
-                      }
+                {/* Continuous Strip Track */}
+                <div className="bg-[#0D1017] p-1.5 rounded border border-[#252B37] flex items-stretch gap-1.5 h-12 w-full">
+                  {incident.replays.map((run) => {
+                    const isSelected = selectedTickIndex === run.index;
+                    const tickBg = getTickColor(run, incident);
+                    const isDark = tickBg === "#232B3B";
+                    const isRust = tickBg === "#C2542E";
+                    const isAmber = tickBg === "#E8A33D";
 
-                      return (
-                        <button
-                          key={run.index}
-                          onClick={() => handleTickClick(run)}
-                          title={`Run #${run.index}: ${run.summary} (${run.latencyMs}ms)`}
-                          className={`relative flex flex-col justify-between items-center py-1.5 rounded transition-all duration-150 ${
-                            isSelected 
-                              ? "ring-2 ring-[#4FB8A6] scale-[1.03] z-10" 
-                              : "hover:brightness-125"
+                    return (
+                      <button
+                        key={run.index}
+                        onClick={() => handleTickClick(run)}
+                        title={`Run #${run.index}: ${run.summary} (${run.latencyMs.toFixed(0)}ms)`}
+                        className={`flex-1 h-full rounded-[2px] transition-all relative flex flex-col items-center justify-end pb-1 select-none group cursor-pointer ${
+                          isSelected
+                            ? "ring-2 ring-[#4FB8A6] ring-offset-1 ring-offset-[#0D1017] scale-y-[1.04] z-10 brightness-110"
+                            : "hover:brightness-125"
+                        }`}
+                        style={{
+                          backgroundColor: tickBg,
+                          border: isDark ? "1px solid #343D4E" : "none"
+                        }}
+                      >
+                        {isSelected && (
+                          <span className="absolute -top-1 w-1.5 h-1.5 rounded-full bg-[#4FB8A6] ring-2 ring-[#0D1017]"></span>
+                        )}
+                        <span
+                          className={`font-mono text-[10px] font-semibold leading-none ${
+                            isDark ? "text-[#8B93A3]" : "text-[#11141B] font-bold"
                           }`}
-                          style={{ backgroundColor: tickBg }}
                         >
-                          <span className="font-mono text-[10px] font-bold text-white leading-none">
-                            #{run.index}
-                          </span>
-                          <span className="font-mono text-[9px] text-white/80 leading-none">
-                            {run.latencyMs.toFixed(0)}ms
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                          {run.index}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
 
-                {/* Selected Tick Detail */}
+                {/* Selected Tick Detail / Guidance */}
                 {selectedTickIndex !== null ? (
-                  <div className="mt-3.5 pt-3 border-t border-[#252B37] flex items-center justify-between text-xs font-mono">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-[#4FB8A6] font-bold">Replay #{selectedTickIndex} inspected:</span>
-                      <span className="text-[#F6F4EF]">
-                        {incident.replays.find(r => r.index === selectedTickIndex)?.summary}
-                      </span>
-                    </div>
-                    <div className="text-[#8B93A3]">
-                      linked to span: <span className="text-[#E8A33D]">{incident.replays.find(r => r.index === selectedTickIndex)?.evidenceSpanRef}</span>
-                    </div>
-                  </div>
+                  (() => {
+                    const selectedRun = incident.replays.find(r => r.index === selectedTickIndex);
+                    if (!selectedRun) return null;
+                    const isFailure = selectedRun.status === "reproduced_failure";
+                    return (
+                      <div className="mt-3 px-3 py-2 bg-[#141720] rounded border border-[#252B37] flex items-center justify-between text-xs">
+                        <div className="flex items-center space-x-2.5">
+                          <span className="font-sans font-semibold text-[#F6F4EF]">
+                            Run #{selectedTickIndex}
+                          </span>
+                          <span
+                            className="px-1.5 py-0.5 rounded text-[10px] font-mono font-medium"
+                            style={{
+                              backgroundColor: isFailure ? "rgba(194,84,46,0.15)" : "rgba(232,163,61,0.15)",
+                              color: isFailure ? "#C2542E" : "#E8A33D",
+                              border: `1px solid ${isFailure ? "rgba(194,84,46,0.3)" : "rgba(232,163,61,0.3)"}`
+                            }}
+                          >
+                            {selectedRun.status.replace("_", " ")}
+                          </span>
+                          <span className="font-mono text-xs text-[#8B93A3]">
+                            {selectedRun.latencyMs.toFixed(1)}ms
+                          </span>
+                          <span className="text-[#8B93A3]">•</span>
+                          <span className="font-sans text-xs text-[#F6F4EF]">
+                            {selectedRun.summary}
+                          </span>
+                        </div>
+                        <div className="flex items-center space-x-1.5 font-mono text-[11px] text-[#8B93A3]">
+                          <span>highlighting span:</span>
+                          <span className="text-[#4FB8A6] font-semibold bg-[#11141B] px-1.5 py-0.5 rounded border border-[#252B37]">
+                            {selectedRun.evidenceSpanRef}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })()
                 ) : (
-                  <div className="mt-2 text-[11px] font-mono text-[#8B93A3] text-right">
-                    Click any replay tick to highlight matching evidence span below
+                  <div className="mt-2.5 flex items-center justify-between text-xs font-sans text-[#8B93A3]">
+                    <span>Click any run tick to inspect parameters and highlight matching evidence span below</span>
+                    <span className="font-mono text-[11px] text-[#8B93A3]">{incident.dominantOutcome}</span>
                   </div>
                 )}
               </section>
@@ -1331,19 +1377,19 @@
                   ===================================================================== */}
               <section className="grid grid-cols-2 gap-4">
                 <div className="bg-[#1A1E27] border border-[#252B37] rounded-lg p-4">
-                  <span className="font-mono text-[11px] text-[#8B93A3] block">
-                    classification
+                  <span className="font-sans text-xs font-semibold text-[#8B93A3] block">
+                    Classification
                   </span>
-                  <div className="flex items-center space-x-2 mt-1.5">
+                  <div className="flex items-center space-x-2.5 mt-2">
                     <span
                       className="w-2.5 h-2.5 rounded-full"
                       style={{ backgroundColor: getBucketColor(incident.failureBucket) }}
                     ></span>
-                    <span className="text-base font-semibold text-[#F6F4EF]">
+                    <span className="font-sans text-base font-bold text-[#F6F4EF]">
                       {incident.failureBucket}
                     </span>
                   </div>
-                  <p className="text-xs text-[#8B93A3] mt-1.5 leading-relaxed">
+                  <p className="font-sans text-xs text-[#8B93A3] mt-2 leading-relaxed">
                     {incident.failureBucket === "Tool/data ambiguity" && "Tool returned payload that confused model reasoning."}
                     {incident.failureBucket === "Model decision failure" && "Model selected unauthorized tool or violated policy rule."}
                     {incident.failureBucket === "Missing context failure" && "Required conversation context was absent from initial state."}
@@ -1353,18 +1399,18 @@
                 </div>
 
                 <div className="bg-[#1A1E27] border border-[#252B37] rounded-lg p-4">
-                  <span className="font-mono text-[11px] text-[#8B93A3] block">
-                    confidence score
+                  <span className="font-sans text-xs font-semibold text-[#8B93A3] block">
+                    Confidence score
                   </span>
-                  <div className="flex items-baseline space-x-2 mt-1.5">
-                    <span className="font-mono text-2xl font-bold text-[#4FB8A6]">
+                  <div className="flex items-baseline space-x-2.5 mt-1.5">
+                    <span className="font-mono text-3xl font-bold text-[#4FB8A6]">
                       {incident.confidenceScore}%
                     </span>
                     <span className="font-mono text-xs text-[#8B93A3]">
                       ({incident.dominantCount}/{incident.replaysTotal} replays agreed)
                     </span>
                   </div>
-                  <div className="w-full bg-[#11141B] h-1.5 rounded-full overflow-hidden mt-2.5 border border-[#252B37]">
+                  <div className="w-full bg-[#11141B] h-1.5 rounded-full overflow-hidden mt-3 border border-[#252B37]">
                     <div
                       className="h-full bg-[#4FB8A6]"
                       style={{ width: `${incident.confidenceScore}%` }}
@@ -1380,14 +1426,14 @@
               <section className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
-                    <span className="font-mono text-xs font-semibold text-[#F6F4EF]">
-                      evidence trail
+                    <span className="font-sans text-xs font-semibold text-[#8B93A3]">
+                      Evidence trail
                     </span>
-                    <span className="font-mono text-xs text-[#8B93A3]">
+                    <span className="font-sans text-xs text-[#8B93A3]">
                       (original trace spans & recorded mock interactions)
                     </span>
                   </div>
-                  <span className="font-mono text-[11px] text-[#8B93A3]">
+                  <span className="font-mono text-xs text-[#8B93A3]">
                     {incident.evidenceTrail.length} spans captured
                   </span>
                 </div>
@@ -1412,21 +1458,21 @@
                         {/* Span Header Bar */}
                         <div className="px-4 py-2.5 flex items-center justify-between border-b border-[#252B37]/60">
                           <div className="flex items-center space-x-2.5">
-                            <span className="text-[#8B93A3] text-[11px]">{span.timestamp}</span>
-                            <span className="text-[#F6F4EF] font-semibold">{span.name}</span>
+                            <span className="text-[#8B93A3] text-[11px] font-mono">{span.timestamp}</span>
+                            <span className="text-[#F6F4EF] font-mono font-semibold">{span.name}</span>
                             {span.isSideEffect && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#E8A33D]/10 text-[#E8A33D] border border-[#E8A33D]/30">
+                              <span className="font-sans px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#E8A33D]/10 text-[#E8A33D] border border-[#E8A33D]/30">
                                 side-effect safely mocked
                               </span>
                             )}
                             {isOffending && (
-                              <span className="px-1.5 py-0.5 rounded text-[10px] bg-[#C2542E]/10 text-[#C2542E] border border-[#C2542E]/30">
+                              <span className="font-sans px-1.5 py-0.5 rounded text-[10px] font-medium bg-[#C2542E]/10 text-[#C2542E] border border-[#C2542E]/30">
                                 divergence point
                               </span>
                             )}
                           </div>
 
-                          <span className="text-[#8B93A3] text-[11px]">{span.id}</span>
+                          <span className="text-[#8B93A3] text-[11px] font-mono">{span.id}</span>
                         </div>
 
                         {/* Span Content */}
@@ -1438,8 +1484,8 @@
                           )}
 
                           {/* Paper Area: Forensic Evidence Payload */}
-                          <div className="bg-[#F6F4EF] text-[#11141B] p-3 rounded font-mono text-[11px] overflow-x-auto shadow-inner border border-[#E2DDD5]">
-                            <pre className="whitespace-pre-wrap leading-relaxed">
+                          <div className="bg-[#F6F4EF] text-[#11141B] p-3.5 rounded font-mono text-[11px] overflow-x-auto shadow-inner border border-[#E2DDD5]">
+                            <pre className="font-mono whitespace-pre-wrap leading-relaxed">
                               {JSON.stringify(span.payload, null, 2)}
                             </pre>
                           </div>
@@ -1461,8 +1507,8 @@
                   FORENSIC INVESTIGATION REPORT (Paper texture box)
                   ===================================================================== */}
               <section className="space-y-2">
-                <span className="font-mono text-xs font-semibold text-[#F6F4EF]">
-                  case file investigation report
+                <span className="font-sans text-xs font-semibold text-[#8B93A3]">
+                  Case file investigation report
                 </span>
                 <div className="bg-[#F6F4EF] text-[#11141B] p-5 rounded-lg border border-[#E2DDD5] shadow-sm">
                   <p className="font-sans text-xs leading-relaxed text-[#11141B]">
@@ -1477,21 +1523,21 @@
                   Confirm bug / Mark false positive
                   ===================================================================== */}
               <section className="pt-4 border-t border-[#252B37] flex items-center justify-between">
-                <div className="text-xs font-mono text-[#8B93A3]">
+                <div className="text-xs font-sans text-[#8B93A3]">
                   Confirmed bugs export a regression fixture to CI automatically
                 </div>
 
                 <div className="flex items-center space-x-3">
                   <button
                     onClick={handleMarkFalsePositive}
-                    className="px-4 py-2 rounded text-xs font-mono font-medium text-[#8B93A3] hover:text-[#F6F4EF] bg-[#1A1E27] border border-[#252B37] hover:border-[#384252] transition-colors"
+                    className="px-4 py-2 rounded text-xs font-sans font-semibold text-[#8B93A3] hover:text-[#F6F4EF] bg-[#1A1E27] border border-[#252B37] hover:border-[#384252] transition-colors"
                   >
                     Mark false positive
                   </button>
 
                   <button
                     onClick={handleConfirmBug}
-                    className="px-4 py-2 rounded text-xs font-mono font-medium text-white bg-[#C2542E] hover:bg-[#D46038] border border-[#C2542E] transition-colors flex items-center space-x-2"
+                    className="px-4 py-2 rounded text-xs font-sans font-semibold text-white bg-[#C2542E] hover:bg-[#D46038] border border-[#C2542E] transition-colors flex items-center space-x-2"
                   >
                     <span>Confirm bug</span>
                   </button>

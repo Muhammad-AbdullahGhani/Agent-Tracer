@@ -1,3 +1,4 @@
+import uuid
 import pytest
 from agenttrace.db import init_db, SessionLocal, crud
 from agenttrace.models import TraceStatus, IncidentStatus, FailureBucket
@@ -9,10 +10,13 @@ def setup_db():
     init_db()
 
 def test_regression_fixture_and_runner(tmp_path):
+    unique_suffix = uuid.uuid4().hex[:8]
+    trace_id = f"test_reg_trace_{unique_suffix}"
+    span_id = f"span_tool_{unique_suffix}"
     with SessionLocal() as db:
         trace = crud.create_trace(
             db=db,
-            trace_id="test_reg_trace_1",
+            trace_id=trace_id,
             agent_name="mock_test_agent",
             initial_inputs={"query": "test input"},
             status=TraceStatus.FAILURE,
@@ -20,7 +24,7 @@ def test_regression_fixture_and_runner(tmp_path):
         )
         crud.add_span(
             db=db,
-            span_id="span_tool_1",
+            span_id=span_id,
             trace_id=trace.trace_id,
             name="fetch_data",
             kind=crud.SpanKind.TOOL_CALL,
@@ -40,9 +44,10 @@ def test_regression_fixture_and_runner(tmp_path):
         )
 
         # Create regression fixture
-        fixture = create_fixture_from_incident(db, incident_id=inc.id, custom_name="test_fixture_unit")
+        fixture_name = f"test_fixture_unit_{unique_suffix}"
+        fixture = create_fixture_from_incident(db, incident_id=inc.id, custom_name=fixture_name)
         assert fixture is not None
-        assert fixture.name == "test_fixture_unit"
+        assert fixture.name == fixture_name
         assert "fetch_data" in fixture.mocked_tool_fixtures
 
         # Export pytest file
