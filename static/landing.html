@@ -1,0 +1,1010 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AgentTrace — Deterministic Replay & Failure Investigator for AI Agents</title>
+  <meta name="description" content="Stop guessing why autonomous AI agents break in production. AgentTrace records multi-turn execution graphs, sandbox-replays divergent paths with mocked side effects, and auto-generates CI regression fixtures.">
+
+  <!-- Fonts: IBM Plex Sans & IBM Plex Mono -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: '#080A0F',
+            panel: '#0E121A',
+            card: '#141924',
+            cardHover: '#1A2130',
+            paper: '#F6F4EF',
+            amber: '#E8A33D',
+            teal: '#4FB8A6',
+            tealHover: '#43a795',
+            rust: '#C2542E',
+            muted: '#8B93A3',
+            borderDark: '#202738',
+            borderLight: '#2C364C',
+          },
+          fontFamily: {
+            sans: ['"IBM Plex Sans"', 'sans-serif'],
+            mono: ['"IBM Plex Mono"', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    body {
+      background-color: #080A0F;
+      color: #F6F4EF;
+      font-family: 'IBM Plex Sans', sans-serif;
+      overflow-x: hidden;
+    }
+    code, pre, .font-mono {
+      font-family: 'IBM Plex Mono', monospace;
+    }
+    /* Subtle dot grid pattern */
+    .bg-grid-pattern {
+      background-image: radial-gradient(rgba(255, 255, 255, 0.07) 1px, transparent 1px);
+      background-size: 28px 28px;
+    }
+    /* Glass card border highlight */
+    .glow-border {
+      position: relative;
+    }
+    .glow-border::before {
+      content: '';
+      position: absolute;
+      inset: -1px;
+      border-radius: inherit;
+      padding: 1px;
+      background: linear-gradient(180deg, rgba(79, 184, 166, 0.35) 0%, rgba(32, 39, 56, 0.2) 100%);
+      -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+      -webkit-mask-composite: xor;
+      mask-composite: exclude;
+      pointer-events: none;
+    }
+    /* Pulse glow */
+    @keyframes pulseGlow {
+      0%, 100% { opacity: 0.4; transform: scale(1); }
+      50% { opacity: 0.7; transform: scale(1.05); }
+    }
+    .animate-pulse-glow {
+      animation: pulseGlow 4s ease-in-out infinite;
+    }
+  </style>
+</head>
+<body class="selection:bg-teal/20 selection:text-teal antialiased">
+
+  <!-- =========================================================================
+       NAVIGATION BAR
+       ========================================================================= -->
+  <header class="sticky top-0 z-50 w-full backdrop-blur-xl bg-ink/80 border-b border-borderDark/80">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
+      
+      <!-- Brand Logo -->
+      <a href="/" class="flex items-center gap-3 group">
+        <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-[#1C2536] to-[#121622] border border-[#2D394E] flex items-center justify-center shadow-lg shadow-black/40 ring-1 ring-teal/25 group-hover:ring-teal/50 transition-all">
+          <svg class="w-5 h-5 text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+          </svg>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="font-bold text-lg tracking-tight text-paper">AgentTrace</span>
+          <span class="text-[10px] uppercase font-mono tracking-wider text-teal bg-teal/10 px-2 py-0.5 rounded-full border border-teal/20">
+            v2.4
+          </span>
+        </div>
+      </a>
+
+      <!-- Desktop Nav Links -->
+      <nav class="hidden md:flex items-center gap-8 text-xs font-medium text-muted">
+        <a href="#features" class="hover:text-paper transition-colors">Forensic Engine</a>
+        <a href="#interactive-demo" class="hover:text-paper transition-colors">Live Simulation</a>
+        <a href="#how-it-works" class="hover:text-paper transition-colors">Deterministic Replay</a>
+        <a href="#sdk" class="hover:text-paper transition-colors">Python SDK</a>
+        <a href="#architecture" class="hover:text-paper transition-colors">Architecture</a>
+        <a href="#pricing" class="hover:text-paper transition-colors">Enterprise</a>
+      </nav>
+
+      <!-- Right Action CTAs -->
+      <div class="flex items-center gap-3">
+        <a href="/console" class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-teal hover:bg-tealHover text-ink font-semibold text-xs transition-all shadow-lg shadow-teal/15 active:scale-[0.98]">
+          <span>Launch Console</span>
+          <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12" />
+            <polyline points="12 5 19 12 12 19" />
+          </svg>
+        </a>
+      </div>
+    </div>
+  </header>
+
+  <!-- =========================================================================
+       HERO SECTION
+       ========================================================================= -->
+  <section class="relative pt-16 pb-20 sm:pt-24 sm:pb-28 overflow-hidden bg-grid-pattern">
+    
+    <!-- Ambient Radial Lighting -->
+    <div class="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[700px] h-[400px] bg-teal/10 rounded-full blur-[140px] pointer-events-none animate-pulse-glow"></div>
+    <div class="absolute top-1/3 left-1/3 w-[500px] h-[300px] bg-amber/5 rounded-full blur-[120px] pointer-events-none"></div>
+
+    <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10 text-center">
+      
+      <!-- Announcement Pill -->
+      <div class="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-panel border border-borderDark text-xs mb-8 shadow-inner hover:border-teal/40 transition-colors">
+        <span class="w-2 h-2 rounded-full bg-teal animate-pulse"></span>
+        <span class="text-paper font-medium">AgentTrace 2.4 Released</span>
+        <span class="text-muted">•</span>
+        <span class="text-teal font-mono text-[11px]">Multi-Run Stochastic Flake Isolation →</span>
+      </div>
+
+      <!-- Main Headline -->
+      <h1 class="text-4xl sm:text-6xl lg:text-7xl font-bold tracking-tight text-paper leading-[1.08] max-w-4xl mx-auto">
+        Deterministic Replay for <br class="hidden sm:inline" />
+        <span class="bg-gradient-to-r from-teal via-[#7EE7D8] to-paper bg-clip-text text-transparent">
+          Autonomous AI Agents.
+        </span>
+      </h1>
+
+      <!-- Subtitle -->
+      <p class="mt-6 text-base sm:text-lg text-muted max-w-2xl mx-auto leading-relaxed">
+        Stop guessing why your agents break in production. AgentTrace reconstructs the exact multi-turn execution graph, sandbox-replays divergent paths with mocked side effects, and auto-generates CI regression fixtures.
+      </p>
+
+      <!-- Primary Action Buttons -->
+      <div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+        <a href="/console" class="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-teal hover:bg-tealHover text-ink font-semibold text-sm transition-all shadow-xl shadow-teal/20 flex items-center justify-center gap-2 active:scale-[0.98]">
+          <span>Explore Live Incident Console</span>
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="5" y1="12" x2="19" y2="12" />
+            <polyline points="12 5 19 12 12 19" />
+          </svg>
+        </a>
+        <a href="#sdk" class="w-full sm:w-auto px-6 py-3.5 rounded-xl bg-panel hover:bg-card border border-borderDark hover:border-borderLight text-paper font-medium text-sm transition-all flex items-center justify-center gap-2">
+          <svg class="w-4 h-4 text-muted" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4 17l6-6-6-6" />
+            <line x1="12" y1="19" x2="20" y2="19" />
+          </svg>
+          <span class="font-mono text-xs text-muted">pip install agenttrace</span>
+        </a>
+      </div>
+
+      <!-- Quick Trust Indicators -->
+      <div class="mt-12 flex flex-wrap items-center justify-center gap-x-8 gap-y-3 text-xs text-muted font-mono">
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 6L9 17l-5-5"/></svg>
+          <span>Zero Side-Effect Replay</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 6L9 17l-5-5"/></svg>
+          <span>LangGraph & CrewAI Native</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 6L9 17l-5-5"/></svg>
+          <span>Auto-Generated Pytest Fixtures</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <svg class="w-4 h-4 text-teal" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 6L9 17l-5-5"/></svg>
+          <span>100% Self-Hosted or Cloud</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- =========================================================================
+         INTERACTIVE HERO PRODUCT DEMO (SIMULATED REPLAY CONSOLE)
+         ========================================================================= -->
+    <div id="interactive-demo" class="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 mt-14 relative z-20">
+      <div class="w-full bg-panel border border-borderDark rounded-2xl shadow-[0_25px_60px_-15px_rgba(0,0,0,0.8)] overflow-hidden glow-border">
+        
+        <!-- Console Window Chrome Header -->
+        <div class="bg-ink px-4 py-3 border-b border-borderDark flex items-center justify-between">
+          <div class="flex items-center gap-2.5">
+            <div class="w-3 h-3 rounded-full bg-[#E85E55]/80"></div>
+            <div class="w-3 h-3 rounded-full bg-[#E8A33D]/80"></div>
+            <div class="w-3 h-3 rounded-full bg-[#4FB8A6]/80"></div>
+            <span class="ml-2 font-mono text-xs text-muted">agenttrace — incident_investigator</span>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <span class="inline-flex items-center gap-1.5 text-[11px] font-mono text-amber bg-amber/10 border border-amber/30 px-2.5 py-0.5 rounded">
+              <span>INCIDENT #1842</span>
+              <span>•</span>
+              <span>Needs Review</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- Interactive Workbench Body -->
+        <div class="p-6 sm:p-8 space-y-6">
+          
+          <!-- Top Incident Metadata Bar -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-borderDark">
+            <div>
+              <div class="flex items-center gap-2">
+                <span class="font-mono text-xs font-semibold text-teal">refund_agent</span>
+                <span class="text-xs text-muted">/ production / commit</span>
+                <span class="font-mono text-xs text-paper bg-ink px-1.5 py-0.5 rounded border border-borderDark">f9a2b0e</span>
+              </div>
+              <h2 class="text-lg font-bold text-paper mt-1">
+                Wrong transaction selected for refund after ambiguous status code
+              </h2>
+            </div>
+
+            <!-- Interactive Action Button -->
+            <button id="triggerReplayBtn" onclick="runSimulatedReplay()" class="px-4 py-2.5 rounded-lg bg-teal hover:bg-tealHover text-ink font-mono font-semibold text-xs flex items-center gap-2 shadow-lg shadow-teal/15 transition-all self-start sm:self-auto cursor-pointer">
+              <svg id="replayIcon" class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+              <span id="replayBtnLabel">Re-Run 10x Stochastic Sandbox</span>
+            </button>
+          </div>
+
+          <!-- 10x Replay Ticks Visualization -->
+          <div>
+            <div class="flex items-center justify-between text-xs font-mono text-muted mb-2">
+              <span class="flex items-center gap-2">
+                <span>STOCHASTIC REPLAY PASSES (10 RUNS)</span>
+                <span id="replaySummaryBadge" class="text-rust bg-rust/10 px-2 py-0.5 rounded border border-rust/30 text-[10px]">
+                  8/10 REPRODUCED IDENTICAL FAILURE
+                </span>
+              </span>
+              <span class="text-[11px] text-muted">Click tick to inspect divergence</span>
+            </div>
+
+            <!-- Ticks Grid -->
+            <div class="grid grid-cols-10 gap-2 p-3 bg-ink rounded-xl border border-borderDark" id="ticksContainer">
+              <!-- Dynamically populated or static baseline -->
+              <div class="h-10 rounded bg-rust flex flex-col items-center justify-center font-mono text-[11px] font-bold text-ink cursor-pointer hover:ring-2 hover:ring-rust transition-all" title="Run 1: Reproduced Failure (142ms)">#1</div>
+              <div class="h-10 rounded bg-rust flex flex-col items-center justify-center font-mono text-[11px] font-bold text-ink cursor-pointer hover:ring-2 hover:ring-rust transition-all" title="Run 2: Reproduced Failure (140ms)">#2</div>
+              <div class="h-10 rounded bg-rust flex flex-col items-center justify-center font-mono text-[11px] font-bold text-ink cursor-pointer hover:ring-2 hover:ring-rust transition-all" title="Run 3: Reproduced Failure (145ms)">#3</div>
+              <div class="h-10 rounded bg-rust flex flex-col items-center justify-center font-mono text-[11px] font-bold text-ink cursor-pointer hover:ring-2 hover:ring-rust transition-all" title="Run 4: Reproduced Failure (141ms)">#4</div>
+              <div class="h-10 rounded bg-card border border-teal text-teal flex flex-col items-center justify-center font-mono text-[11px] font-bold cursor-pointer hover:ring-2 hover:ring-teal transition-all" title="Run 5: Divergent Pass (Model hesitated) (131ms)">#5</div>
+              <div class="h-10 rounded bg-rust flex flex-col items-center justify-center font-mono text-[11px] font-bold text-ink cursor-pointer hover:ring-2 hover:ring-rust transition-all" title="Run 6: Reproduced Failure (144ms)">#6</div>
+              <div class="h-10 rounded bg-rust flex flex-col items-center justify-center font-mono text-[11px] font-bold text-ink cursor-pointer hover:ring-2 hover:ring-rust transition-all" title="Run 7: Reproduced Failure (138ms)">#7</div>
+              <div class="h-10 rounded bg-rust flex flex-col items-center justify-center font-mono text-[11px] font-bold text-ink cursor-pointer hover:ring-2 hover:ring-rust transition-all" title="Run 8: Reproduced Failure (143ms)">#8</div>
+              <div class="h-10 rounded bg-amber flex flex-col items-center justify-center font-mono text-[11px] font-bold text-ink cursor-pointer hover:ring-2 hover:ring-amber transition-all" title="Run 9: Divergent Error (Timeout on fallback) (165ms)">#9</div>
+              <div class="h-10 rounded bg-rust flex flex-col items-center justify-center font-mono text-[11px] font-bold text-ink cursor-pointer hover:ring-2 hover:ring-rust transition-all" title="Run 10: Reproduced Failure (141ms)">#10</div>
+            </div>
+          </div>
+
+          <!-- Execution Graph Forensic Breakdown -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            
+            <!-- Step Execution Log -->
+            <div class="bg-ink p-4 rounded-xl border border-borderDark space-y-3 font-mono text-xs">
+              <div class="flex items-center justify-between text-muted border-b border-borderDark pb-2">
+                <span>EXECUTION TIMELINE SPANS</span>
+                <span class="text-[10px] text-teal">ALL SIDE-EFFECTS MOCKED</span>
+              </div>
+
+              <div class="space-y-2">
+                <div class="flex items-center justify-between p-2 rounded bg-card/60 border border-borderDark/60">
+                  <div class="flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 rounded-full bg-teal"></span>
+                    <span class="text-paper">triage_request</span>
+                  </div>
+                  <span class="text-muted text-[11px]">24.2ms</span>
+                </div>
+
+                <div class="flex items-center justify-between p-2 rounded bg-card/60 border border-borderDark/60">
+                  <div class="flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 rounded-full bg-teal"></span>
+                    <span class="text-paper">tool[get_order_details]</span>
+                  </div>
+                  <span class="text-teal text-[10px] bg-teal/10 px-1 rounded">Read-Only</span>
+                </div>
+
+                <div class="flex items-center justify-between p-2 rounded bg-rust/15 border border-rust/40">
+                  <div class="flex items-center gap-2">
+                    <span class="w-1.5 h-1.5 rounded-full bg-rust animate-pulse"></span>
+                    <span class="text-rust font-semibold">tool[process_refund]</span>
+                  </div>
+                  <span class="text-rust text-[10px] font-bold uppercase">Breach Intercepted</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- Root Cause & Pytest Fixture Generator -->
+            <div class="bg-ink p-4 rounded-xl border border-borderDark flex flex-col justify-between font-mono text-xs">
+              <div>
+                <div class="flex items-center justify-between text-muted border-b border-borderDark pb-2 mb-3">
+                  <span>ROOT-CAUSE CLASSIFIER</span>
+                  <span class="text-amber">87% Confidence</span>
+                </div>
+
+                <div class="space-y-2 text-paper text-[11px] leading-relaxed">
+                  <p>
+                    <span class="text-muted">Failure Type:</span> <strong class="text-amber">Tool/Data Ambiguity</strong>
+                  </p>
+                  <p>
+                    <span class="text-muted">Observation:</span> Model interpreted <code class="text-teal bg-card px-1 py-0.5 rounded">status='disputed_pending'</code> as settled transaction due to ambiguous schema descriptions in tool definition.
+                  </p>
+                </div>
+              </div>
+
+              <!-- Instant CI Export -->
+              <div class="pt-3 border-t border-borderDark flex items-center justify-between mt-3">
+                <span class="text-[10px] text-muted">Prevent recurrence in CI</span>
+                <a href="/console" class="text-xs text-teal hover:underline flex items-center gap-1 font-sans font-medium">
+                  <span>Export pytest fixture</span>
+                  <span>→</span>
+                </a>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       CORE CAPABILITIES (NOT GENERIC AI FLUFF)
+       ========================================================================= -->
+  <section id="features" class="py-24 border-t border-borderDark/70 bg-panel/50 relative">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <!-- Section Header -->
+      <div class="max-w-3xl mb-16">
+        <h2 class="text-xs font-mono font-semibold uppercase tracking-widest text-teal mb-3">Forensic Observability</h2>
+        <h3 class="text-3xl sm:text-4xl font-bold tracking-tight text-paper">
+          Why traditional APMs fail for Autonomous AI Agents.
+        </h3>
+        <p class="mt-4 text-muted text-sm sm:text-base leading-relaxed">
+          Standard tracing tools only capture latencies and log strings. When an agent hallucinates, loops, or takes unauthorized actions, you can’t replay it without triggering duplicate real-world API mutations. AgentTrace provides deterministic sandboxing.
+        </p>
+      </div>
+
+      <!-- Feature Grid (Bento Style) -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        
+        <!-- Card 1 -->
+        <div class="bg-card/90 border border-borderDark p-7 rounded-2xl hover:border-borderLight transition-all space-y-4">
+          <div class="w-10 h-10 rounded-xl bg-teal/10 border border-teal/20 flex items-center justify-center text-teal">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 14 14"/></svg>
+          </div>
+          <h4 class="text-lg font-bold text-paper">Zero Side-Effect Replay</h4>
+          <p class="text-xs sm:text-sm text-muted leading-relaxed">
+            Every tool is tagged as read-only or side-effect. During re-execution, our sandbox returns recorded snapshots for reads and safely intercepts writes (e.g. emails, refunds, DB updates) with mock contexts.
+          </p>
+          <div class="pt-2 font-mono text-[11px] text-teal">@trace_tool(is_side_effect=True)</div>
+        </div>
+
+        <!-- Card 2 -->
+        <div class="bg-card/90 border border-borderDark p-7 rounded-2xl hover:border-borderLight transition-all space-y-4">
+          <div class="w-10 h-10 rounded-xl bg-amber/10 border border-amber/20 flex items-center justify-center text-amber">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+          </div>
+          <h4 class="text-lg font-bold text-paper">Stochastic Divergence Scoring</h4>
+          <p class="text-xs sm:text-sm text-muted leading-relaxed">
+            Was it a deterministic logic flaw or non-deterministic LLM temperature flakiness? AgentTrace replays failure traces 10x in parallel to calculate dominant convergence rates and pinpoint stochastic divergence.
+          </p>
+          <div class="pt-2 font-mono text-[11px] text-amber">Stochastic Jitter &gt; 80% Flagged</div>
+        </div>
+
+        <!-- Card 3 -->
+        <div class="bg-card/90 border border-borderDark p-7 rounded-2xl hover:border-borderLight transition-all space-y-4">
+          <div class="w-10 h-10 rounded-xl bg-rust/10 border border-rust/20 flex items-center justify-center text-rust">
+            <svg class="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+          </div>
+          <h4 class="text-lg font-bold text-paper">1-Click CI Regression Tests</h4>
+          <p class="text-xs sm:text-sm text-muted leading-relaxed">
+            Turn embarrassing production failures into frozen <code class="text-paper">pytest</code> test fixtures with one click. Test every future agent model upgrade against historical edge cases before deploying.
+          </p>
+          <div class="pt-2 font-mono text-[11px] text-rust">agenttrace export --format pytest</div>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       INTERACTIVE FAILURE TRIAGE SIMULATOR
+       ========================================================================= -->
+  <section class="py-24 border-t border-borderDark bg-ink relative">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <div class="text-center max-w-3xl mx-auto mb-14">
+        <h2 class="text-xs font-mono font-semibold uppercase tracking-widest text-teal mb-3">Live Scenario Simulator</h2>
+        <h3 class="text-3xl font-bold tracking-tight text-paper">
+          Inspect how AgentTrace triages 3 common production agent failures.
+        </h3>
+        <p class="text-sm text-muted mt-3">Select a scenario to view its execution graph and root-cause classification:</p>
+      </div>
+
+      <!-- Scenario Selector Tabs -->
+      <div class="flex flex-wrap items-center justify-center gap-3 mb-10">
+        <button onclick="setScenario('ambiguity')" id="tab-ambiguity" class="scenario-tab px-4 py-2 rounded-xl text-xs font-mono font-medium border border-teal bg-teal/10 text-teal transition-all">
+          1. Tool / Data Ambiguity
+        </button>
+        <button onclick="setScenario('policy')" id="tab-policy" class="scenario-tab px-4 py-2 rounded-xl text-xs font-mono font-medium border border-borderDark bg-card text-muted hover:text-paper transition-all">
+          2. Model Decision Breach
+        </button>
+        <button onclick="setScenario('context')" id="tab-context" class="scenario-tab px-4 py-2 rounded-xl text-xs font-mono font-medium border border-borderDark bg-card text-muted hover:text-paper transition-all">
+          3. Missing Context Loop
+        </button>
+      </div>
+
+      <!-- Scenario Interactive Card -->
+      <div class="max-w-4xl mx-auto bg-panel border border-borderDark rounded-2xl p-6 sm:p-8 space-y-6 glow-border">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-borderDark">
+          <div>
+            <span id="scenarioCategory" class="text-xs font-mono uppercase text-amber font-semibold">TOOL/DATA AMBIGUITY</span>
+            <h4 id="scenarioTitle" class="text-xl font-bold text-paper mt-1">Interpreted pending chargeback as settled order</h4>
+          </div>
+          <span id="scenarioBadge" class="self-start sm:self-auto px-3 py-1 rounded bg-amber/10 border border-amber/30 text-amber text-xs font-mono">
+            87% Dominant Failure
+          </span>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <!-- Trace Diff -->
+          <div class="space-y-3 font-mono text-xs">
+            <span class="text-muted text-[11px]">SANDBOX TRACE DIFF</span>
+            <div id="scenarioDiff" class="p-4 rounded-xl bg-ink border border-borderDark text-[11px] leading-relaxed text-[#DCE2EE] space-y-2">
+              <div class="text-teal">+ state.order_status = 'pending_chargeback'</div>
+              <div class="text-rust">- model.action = 'ISSUE_FULL_REFUND' [UNAUTHORIZED]</div>
+              <div class="text-muted">  reason: 'disputed_pending' confused with delivered item</div>
+            </div>
+          </div>
+
+          <!-- Suggested Fix -->
+          <div class="space-y-3 font-mono text-xs">
+            <span class="text-muted text-[11px]">AUTOMATED REMEDIATION SUGGESTION</span>
+            <div id="scenarioFix" class="p-4 rounded-xl bg-ink border border-borderDark text-[11px] leading-relaxed text-muted space-y-2">
+              <p class="text-paper">Update tool schema docstring for <code class="text-teal">get_order_details()</code>:</p>
+              <p class="text-teal font-medium">Explicitly instruct model: "Do not execute refund if order.status contains 'pending_chargeback'."</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       CODE INTEGRATION & SDK
+       ========================================================================= -->
+  <section id="sdk" class="py-24 border-t border-borderDark bg-panel/30 relative">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+        
+        <!-- Left Column: Copy & Value -->
+        <div>
+          <h2 class="text-xs font-mono font-semibold uppercase tracking-widest text-teal mb-3">Developer Ergonomics</h2>
+          <h3 class="text-3xl sm:text-4xl font-bold tracking-tight text-paper">
+            Two decorators. Zero monkey-patching.
+          </h3>
+          <p class="mt-4 text-muted text-sm sm:text-base leading-relaxed">
+            Instrumenting your LangGraph, CrewAI, or raw OpenAI workflows takes less than 3 minutes. AgentTrace hooks directly into your execution graphs without wrapping API clients in proprietary proxies.
+          </p>
+
+          <div class="mt-8 space-y-4">
+            <div class="flex items-start gap-3">
+              <div class="w-6 h-6 rounded-full bg-teal/10 border border-teal/30 flex items-center justify-center text-teal text-xs font-mono mt-0.5">1</div>
+              <div>
+                <strong class="text-paper text-sm">Install the lightweight SDK</strong>
+                <p class="text-xs text-muted mt-0.5">Pure Python, zero heavy dependencies, under 2ms overhead per span.</p>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-3">
+              <div class="w-6 h-6 rounded-full bg-teal/10 border border-teal/30 flex items-center justify-center text-teal text-xs font-mono mt-0.5">2</div>
+              <div>
+                <strong class="text-paper text-sm">Tag tool side-effects</strong>
+                <p class="text-xs text-muted mt-0.5">Specify which tools modify databases or send external payloads so replay won't duplicate them.</p>
+              </div>
+            </div>
+
+            <div class="flex items-start gap-3">
+              <div class="w-6 h-6 rounded-full bg-teal/10 border border-teal/30 flex items-center justify-center text-teal text-xs font-mono mt-0.5">3</div>
+              <div>
+                <strong class="text-paper text-sm">Replay and generate CI fixtures</strong>
+                <p class="text-xs text-muted mt-0.5">Execute deterministic replays in local CLI or inspect via web console.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Code Viewer -->
+        <div class="bg-ink border border-borderDark rounded-2xl overflow-hidden shadow-2xl">
+          <!-- Code Tabs -->
+          <div class="px-4 py-3 bg-panel border-b border-borderDark flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <button onclick="switchCodeTab('langgraph')" id="code-tab-langgraph" class="text-xs font-mono font-medium text-teal border-b-2 border-teal pb-1">LangGraph</button>
+              <button onclick="switchCodeTab('cli')" id="code-tab-cli" class="text-xs font-mono font-medium text-muted hover:text-paper pb-1">CLI Runner</button>
+              <button onclick="switchCodeTab('pytest')" id="code-tab-pytest" class="text-xs font-mono font-medium text-muted hover:text-paper pb-1">Pytest Fixture</button>
+            </div>
+            <button onclick="copyCurrentCode()" class="text-xs font-mono text-muted hover:text-teal flex items-center gap-1.5 transition-colors">
+              <svg class="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+              <span id="copyBtnText">Copy</span>
+            </button>
+          </div>
+
+          <!-- Code Snippets -->
+          <pre id="codeLanggraph" class="p-5 font-mono text-xs text-[#DCE2EE] overflow-x-auto leading-relaxed"><code><span class="text-muted"># 1. Instrument tools and graph nodes</span>
+<span class="text-amber">from</span> agenttrace.tracer <span class="text-amber">import</span> trace_tool, trace_node
+
+<span class="text-teal">@trace_tool</span>(name=<span class="text-paper">"get_order"</span>, is_side_effect=<span class="text-amber">False</span>)
+<span class="text-amber">def</span> <span class="text-teal">get_order_details</span>(order_id: <span class="text-paper">str</span>):
+    <span class="text-amber">return</span> db.query(order_id)
+
+<span class="text-teal">@trace_tool</span>(name=<span class="text-paper">"issue_refund"</span>, is_side_effect=<span class="text-amber">True</span>)
+<span class="text-amber">def</span> <span class="text-teal">process_refund</span>(order_id: <span class="text-paper">str</span>, amount: <span class="text-paper">float</span>):
+    <span class="text-muted"># Automatically mocked during replay!</span>
+    <span class="text-amber">return</span> payment_gateway.charge_refund(order_id, amount)
+
+<span class="text-teal">@trace_node</span>(<span class="text-paper">"decision_engine"</span>)
+<span class="text-amber">def</span> <span class="text-teal">agent_decision_node</span>(state):
+    ...</code></pre>
+
+          <pre id="codeCli" class="hidden p-5 font-mono text-xs text-[#DCE2EE] overflow-x-auto leading-relaxed"><code><span class="text-muted"># CLI: Replay and test regressions</span>
+$ pip install agenttrace
+
+<span class="text-muted"># Replay incident inc_1842 10 times in sandbox</span>
+$ agenttrace replay inc_1842 --runs 10 --diff
+
+<span class="text-muted"># Run all generated CI regression fixtures</span>
+$ agenttrace test-regressions
+
+<span class="text-muted"># Print telemetry stats</span>
+$ agenttrace stats</code></pre>
+
+          <pre id="codePytest" class="hidden p-5 font-mono text-xs text-[#DCE2EE] overflow-x-auto leading-relaxed"><code><span class="text-muted"># Automatically generated CI regression test</span>
+<span class="text-amber">import</span> pytest
+<span class="text-amber">from</span> agenttrace.regression <span class="text-amber">import</span> RegressionSuiteRunner
+
+<span class="text-amber">def</span> <span class="text-teal">test_regression_inc_1842_chargeback</span>():
+    runner = RegressionSuiteRunner()
+    result = runner.run_fixture(<span class="text-paper">"inc_1842_chargeback_guard"</span>)
+    
+    <span class="text-amber">assert</span> result[<span class="text-paper">"passed"</span>], <span class="text-paper">f"Agent regressed: {result['details']}"</span>
+    <span class="text-amber">assert</span> <span class="text-paper">"CRITICAL POLICY BREACH"</span> <span class="text-amber">not in</span> result[<span class="text-paper">"logs"</span>]</code></pre>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       ENTERPRISE & SECURITY SPECIFICATIONS
+       ========================================================================= -->
+  <section id="architecture" class="py-24 border-t border-borderDark bg-ink relative">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <div class="text-center max-w-3xl mx-auto mb-16">
+        <h2 class="text-xs font-mono font-semibold uppercase tracking-widest text-teal mb-3">Enterprise Grade</h2>
+        <h3 class="text-3xl sm:text-4xl font-bold tracking-tight text-paper">
+          Architected for high-compliance, mission-critical environments.
+        </h3>
+        <p class="mt-4 text-muted text-sm sm:text-base leading-relaxed">
+          From fintech workflows to HIPAA healthcare agents, AgentTrace ensures sensitive customer data never leaves your perimeter unencrypted.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <div class="p-6 rounded-2xl bg-panel border border-borderDark space-y-3">
+          <div class="w-8 h-8 rounded-lg bg-teal/10 flex items-center justify-center text-teal">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          </div>
+          <h4 class="text-base font-bold text-paper">Automatic PII Redaction</h4>
+          <p class="text-xs text-muted leading-relaxed">Tokens, credit card numbers, and patient PII are scrubbed locally in memory before trace payloads are stored.</p>
+        </div>
+
+        <div class="p-6 rounded-2xl bg-panel border border-borderDark space-y-3">
+          <div class="w-8 h-8 rounded-lg bg-teal/10 flex items-center justify-center text-teal">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+          </div>
+          <h4 class="text-base font-bold text-paper">Self-Hosted Kubernetes</h4>
+          <p class="text-xs text-muted leading-relaxed">Deploy into your private AWS/GCP VPC using our official Helm charts or Docker Compose with zero cloud tether.</p>
+        </div>
+
+        <div class="p-6 rounded-2xl bg-panel border border-borderDark space-y-3">
+          <div class="w-8 h-8 rounded-lg bg-teal/10 flex items-center justify-center text-teal">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          </div>
+          <h4 class="text-base font-bold text-paper">OpenTelemetry Native</h4>
+          <p class="text-xs text-muted leading-relaxed">Export standard OTLP traces directly to your existing Datadog, Honeycomb, or Grafana dashboards with zero lock-in.</p>
+        </div>
+
+        <div class="p-6 rounded-2xl bg-panel border border-borderDark space-y-3">
+          <div class="w-8 h-8 rounded-lg bg-teal/10 flex items-center justify-center text-teal">
+            <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          </div>
+          <h4 class="text-base font-bold text-paper">SOC-2 Type II Certified</h4>
+          <p class="text-xs text-muted leading-relaxed">Continuous audit logging, cryptographic span hashing, and role-based access control (RBAC) built into the core.</p>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       PRICING & TIERS
+       ========================================================================= -->
+  <section id="pricing" class="py-24 border-t border-borderDark bg-panel/30 relative">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <div class="text-center max-w-3xl mx-auto mb-16">
+        <h2 class="text-xs font-mono font-semibold uppercase tracking-widest text-teal mb-3">Transparent Plans</h2>
+        <h3 class="text-3xl sm:text-4xl font-bold tracking-tight text-paper">
+          Start local. Scale to millions of agent replays.
+        </h3>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-8 max-w-6xl mx-auto">
+        
+        <!-- Open Source -->
+        <div class="bg-card p-8 rounded-2xl border border-borderDark flex flex-col justify-between space-y-6">
+          <div class="space-y-4">
+            <span class="text-xs font-mono text-muted uppercase font-semibold">Community Core</span>
+            <div class="flex items-baseline gap-2">
+              <span class="text-3xl font-bold text-paper">$0</span>
+              <span class="text-xs text-muted">/ forever open source</span>
+            </div>
+            <p class="text-xs text-muted">For individual developers running agent experiments on localhost.</p>
+            
+            <ul class="space-y-2.5 text-xs text-[#C4CDDC] pt-4 border-t border-borderDark">
+              <li class="flex items-center gap-2">✓ Python Tracer & Decorators</li>
+              <li class="flex items-center gap-2">✓ Local SQLite & In-Memory Sandbox</li>
+              <li class="flex items-center gap-2">✓ 1-Click Pytest Fixture Export</li>
+              <li class="flex items-center gap-2">✓ Full CLI Suite (<code class="text-teal">agenttrace</code>)</li>
+            </ul>
+          </div>
+
+          <a href="/console" class="w-full py-2.5 rounded-lg bg-panel hover:bg-cardHover border border-borderDark text-paper text-xs font-mono font-medium text-center transition-colors">
+            Launch Local Dashboard
+          </a>
+        </div>
+
+        <!-- Team (Featured) -->
+        <div class="bg-panel p-8 rounded-2xl border-2 border-teal relative flex flex-col justify-between space-y-6 shadow-2xl shadow-teal/10 glow-border">
+          <div class="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-teal text-ink font-mono text-[10px] font-bold uppercase tracking-wider">
+            Most Popular
+          </div>
+
+          <div class="space-y-4">
+            <span class="text-xs font-mono text-teal uppercase font-semibold">Team Cloud / Docker</span>
+            <div class="flex items-baseline gap-2">
+              <span class="text-4xl font-bold text-paper">$99</span>
+              <span class="text-xs text-muted">/ month per team</span>
+            </div>
+            <p class="text-xs text-muted">For AI engineering teams deploying autonomous production agents.</p>
+            
+            <ul class="space-y-2.5 text-xs text-[#C4CDDC] pt-4 border-t border-borderDark">
+              <li class="flex items-center gap-2 font-medium text-paper">✓ Everything in Community, plus:</li>
+              <li class="flex items-center gap-2">✓ 10x Parallel Stochastic Replay Worker</li>
+              <li class="flex items-center gap-2">✓ Centralized Postgres Trace Vault</li>
+              <li class="flex items-center gap-2">✓ Multi-Agent Graph Divergence Diffs</li>
+              <li class="flex items-center gap-2">✓ CI GitHub Actions Integration</li>
+            </ul>
+          </div>
+
+          <a href="/console" class="w-full py-2.5 rounded-lg bg-teal hover:bg-tealHover text-ink text-xs font-mono font-semibold text-center transition-all shadow-lg shadow-teal/20">
+            Start 14-Day Free Trial
+          </a>
+        </div>
+
+        <!-- Enterprise -->
+        <div class="bg-card p-8 rounded-2xl border border-borderDark flex flex-col justify-between space-y-6">
+          <div class="space-y-4">
+            <span class="text-xs font-mono text-muted uppercase font-semibold">Enterprise Scale</span>
+            <div class="flex items-baseline gap-2">
+              <span class="text-3xl font-bold text-paper">Custom</span>
+              <span class="text-xs text-muted">/ annual contract</span>
+            </div>
+            <p class="text-xs text-muted">For regulated organizations requiring air-gapped on-prem deployment.</p>
+            
+            <ul class="space-y-2.5 text-xs text-[#C4CDDC] pt-4 border-t border-borderDark">
+              <li class="flex items-center gap-2">✓ Self-Hosted Helm & Kubernetes</li>
+              <li class="flex items-center gap-2">✓ Dedicated VPC Peering & Air-Gapped</li>
+              <li class="flex items-center gap-2">✓ SAML 2.0 / Okta SSO & SCIM</li>
+              <li class="flex items-center gap-2">✓ 99.99% Uptime SLA & 24/7 On-Call</li>
+            </ul>
+          </div>
+
+          <button onclick="alert('Contact sales@agenttrace.io for dedicated architecture briefing.')" class="w-full py-2.5 rounded-lg bg-panel hover:bg-cardHover border border-borderDark text-paper text-xs font-mono font-medium text-center transition-colors">
+            Contact Enterprise Sales
+          </button>
+        </div>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       FREQUENTLY ASKED QUESTIONS
+       ========================================================================= -->
+  <section class="py-24 border-t border-borderDark bg-ink relative">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+      
+      <div class="text-center mb-14">
+        <h2 class="text-xs font-mono font-semibold uppercase tracking-widest text-teal mb-3">FAQ</h2>
+        <h3 class="text-3xl font-bold tracking-tight text-paper">
+          Frequently Answered Questions
+        </h3>
+      </div>
+
+      <div class="space-y-4 font-sans">
+        
+        <details class="group bg-panel border border-borderDark rounded-xl p-5 [&_summary::-webkit-details-marker]:hidden cursor-pointer">
+          <summary class="flex items-center justify-between font-semibold text-sm text-paper">
+            <span>How does AgentTrace replay non-deterministic LLMs without altering results?</span>
+            <span class="text-teal text-lg group-open:rotate-45 transition-transform">+</span>
+          </summary>
+          <p class="mt-3 text-xs sm:text-sm text-muted leading-relaxed">
+            During live execution, AgentTrace records the exact model responses, prompt seeds, tool inputs, and return payloads. During deterministic replay, read-only tools and LLM steps use these cached cryptographic snapshots. To test for stochastic flakiness, AgentTrace can also execute an "Active Stochastic Replay" which queries the LLM 10x with varied temperature to detect if failure reproduces reliably.
+          </p>
+        </details>
+
+        <details class="group bg-panel border border-borderDark rounded-xl p-5 [&_summary::-webkit-details-marker]:hidden cursor-pointer">
+          <summary class="flex items-center justify-between font-semibold text-sm text-paper">
+            <span>Will replaying an agent trigger duplicate real-world API mutations (e.g. Stripe refunds)?</span>
+            <span class="text-teal text-lg group-open:rotate-45 transition-transform">+</span>
+          </summary>
+          <p class="mt-3 text-xs sm:text-sm text-muted leading-relaxed">
+            No. Any tool decorated with <code class="text-teal">@trace_tool(is_side_effect=True)</code> is automatically quarantined during replay runs. AgentTrace replaces the real handler with an isolated mock context that records the attempted payload and verifies boundary conditions without sending external HTTP requests.
+          </p>
+        </details>
+
+        <details class="group bg-panel border border-borderDark rounded-xl p-5 [&_summary::-webkit-details-marker]:hidden cursor-pointer">
+          <summary class="flex items-center justify-between font-semibold text-sm text-paper">
+            <span>How does AgentTrace compare to LangSmith or Phoenix?</span>
+            <span class="text-teal text-lg group-open:rotate-45 transition-transform">+</span>
+          </summary>
+          <p class="mt-3 text-xs sm:text-sm text-muted leading-relaxed">
+            While LangSmith and Phoenix excel at prompt tracking and LLM eval datasets, AgentTrace is purpose-built as an autonomous agent failure investigator with sandboxed side-effect interception, 10x stochastic divergence scoring, and automated CI regression test generation.
+          </p>
+        </details>
+
+      </div>
+
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       BOTTOM CALL TO ACTION
+       ========================================================================= -->
+  <section class="py-24 border-t border-borderDark bg-gradient-to-b from-panel to-ink relative overflow-hidden">
+    <div class="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center relative z-10">
+      <h3 class="text-3xl sm:text-5xl font-bold tracking-tight text-paper">
+        Stop debugging autonomous agents with log grep.
+      </h3>
+      <p class="mt-4 text-base text-muted max-w-xl mx-auto">
+        Join engineering teams investigating and testing agent failures with deterministic precision.
+      </p>
+
+      <div class="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
+        <a href="/console" class="w-full sm:w-auto px-8 py-3.5 rounded-xl bg-teal hover:bg-tealHover text-ink font-semibold text-sm transition-all shadow-xl shadow-teal/20 flex items-center justify-center gap-2 active:scale-[0.98]">
+          <span>Launch Forensic Console</span>
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </a>
+        <a href="#sdk" class="w-full sm:w-auto px-7 py-3.5 rounded-xl bg-card hover:bg-cardHover border border-borderDark text-paper font-medium text-sm transition-all">
+          Read Documentation
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- =========================================================================
+       FOOTER
+       ========================================================================= -->
+  <footer class="py-12 border-t border-borderDark bg-ink text-xs text-muted">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col sm:flex-row items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <span class="font-bold text-paper">AgentTrace</span>
+        <span>•</span>
+        <span>Deterministic Replay Engine</span>
+        <span>•</span>
+        <span class="font-mono">v2.4.1</span>
+      </div>
+
+      <div class="flex items-center gap-6">
+        <a href="/console" class="hover:text-paper transition-colors">Console</a>
+        <a href="#features" class="hover:text-paper transition-colors">Features</a>
+        <a href="#sdk" class="hover:text-paper transition-colors">Python SDK</a>
+        <a href="/docs" class="hover:text-paper transition-colors">API Docs</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- =========================================================================
+       CLIENT SCRIPTS FOR INTERACTIVITY
+       ========================================================================= -->
+  <script>
+    // Scenario Simulator Data
+    const SCENARIOS = {
+      ambiguity: {
+        category: "TOOL/DATA AMBIGUITY",
+        title: "Interpreted pending chargeback as settled order",
+        badge: "87% Dominant Failure",
+        badgeClass: "bg-amber/10 border-amber/30 text-amber",
+        diff: `
+          <div class="text-teal">+ state.order_status = 'pending_chargeback'</div>
+          <div class="text-rust">- model.action = 'ISSUE_FULL_REFUND' [UNAUTHORIZED]</div>
+          <div class="text-muted">  reason: 'disputed_pending' confused with delivered item</div>
+        `,
+        fix: `
+          <p class="text-paper">Update tool schema docstring for <code class="text-teal">get_order_details()</code>:</p>
+          <p class="text-teal font-medium">Explicitly instruct model: "Do not execute refund if order.status contains 'pending_chargeback'."</p>
+        `
+      },
+      policy: {
+        category: "MODEL DECISION BREACH",
+        title: "Refund amount ($450.00) exceeded auto-approval policy ($50.00 max)",
+        badge: "100% Policy Breach",
+        badgeClass: "bg-rust/10 border-rust/30 text-rust",
+        diff: `
+          <div class="text-rust">! CRITICAL BREACH: process_refund(order_id='ord_500', amount=450.0)</div>
+          <div class="text-muted">  threshold: $50.00 maximum for autonomous execution</div>
+          <div class="text-teal">+ side_effect intercepted & blocked by AgentTrace sandbox</div>
+        `,
+        fix: `
+          <p class="text-paper">Enforce hard deterministic guardrails on node output:</p>
+          <p class="text-teal font-medium">Route amounts &gt; $50.00 to <code class="text-paper">notify_human_agent</code> before invoking payment tools.</p>
+        `
+      },
+      context: {
+        category: "MISSING CONTEXT FAILURE",
+        title: "Agent referenced non-existent previous ticket and looped indefinitely",
+        badge: "Stochastic Flake (7/10)",
+        badgeClass: "bg-amber/10 border-amber/30 text-amber",
+        diff: `
+          <div class="text-rust">! Graph Loop: triage_request -&gt; triage_request (Depth 6 exceeded)</div>
+          <div class="text-muted">  user_prompt: 'as discussed in previous ticket...'</div>
+          <div class="text-teal">+ memory state missing prior conversation thread ID</div>
+        `,
+        fix: `
+          <p class="text-paper">Implement context validation interceptor:</p>
+          <p class="text-teal font-medium">If customer references prior tickets without ID, immediately halt and prompt user for ticket reference.</p>
+        `
+      }
+    };
+
+    function setScenario(key) {
+      const data = SCENARIOS[key];
+      if (!data) return;
+
+      document.querySelectorAll('.scenario-tab').forEach(el => {
+        el.classList.remove('border-teal', 'bg-teal/10', 'text-teal');
+        el.classList.add('border-borderDark', 'bg-card', 'text-muted');
+      });
+
+      const activeTab = document.getElementById('tab-' + key);
+      if (activeTab) {
+        activeTab.classList.remove('border-borderDark', 'bg-card', 'text-muted');
+        activeTab.classList.add('border-teal', 'bg-teal/10', 'text-teal');
+      }
+
+      document.getElementById('scenarioCategory').textContent = data.category;
+      document.getElementById('scenarioTitle').textContent = data.title;
+      
+      const badge = document.getElementById('scenarioBadge');
+      badge.textContent = data.badge;
+      badge.className = `self-start sm:self-auto px-3 py-1 rounded border text-xs font-mono ${data.badgeClass}`;
+
+      document.getElementById('scenarioDiff').innerHTML = data.diff;
+      document.getElementById('scenarioFix').innerHTML = data.fix;
+    }
+
+    // Code Tab Switcher
+    function switchCodeTab(tab) {
+      document.getElementById('codeLanggraph').classList.add('hidden');
+      document.getElementById('codeCli').classList.add('hidden');
+      document.getElementById('codePytest').classList.add('hidden');
+
+      document.getElementById('code-tab-langgraph').className = "text-xs font-mono font-medium text-muted hover:text-paper pb-1";
+      document.getElementById('code-tab-cli').className = "text-xs font-mono font-medium text-muted hover:text-paper pb-1";
+      document.getElementById('code-tab-pytest').className = "text-xs font-mono font-medium text-muted hover:text-paper pb-1";
+
+      if (tab === 'langgraph') {
+        document.getElementById('codeLanggraph').classList.remove('hidden');
+        document.getElementById('code-tab-langgraph').className = "text-xs font-mono font-medium text-teal border-b-2 border-teal pb-1";
+      } else if (tab === 'cli') {
+        document.getElementById('codeCli').classList.remove('hidden');
+        document.getElementById('code-tab-cli').className = "text-xs font-mono font-medium text-teal border-b-2 border-teal pb-1";
+      } else if (tab === 'pytest') {
+        document.getElementById('codePytest').classList.remove('hidden');
+        document.getElementById('code-tab-pytest').className = "text-xs font-mono font-medium text-teal border-b-2 border-teal pb-1";
+      }
+    }
+
+    // Copy Code Helper
+    function copyCurrentCode() {
+      let code = "";
+      if (!document.getElementById('codeLanggraph').classList.contains('hidden')) {
+        code = document.getElementById('codeLanggraph').innerText;
+      } else if (!document.getElementById('codeCli').classList.contains('hidden')) {
+        code = document.getElementById('codeCli').innerText;
+      } else {
+        code = document.getElementById('codePytest').innerText;
+      }
+
+      navigator.clipboard.writeText(code).then(() => {
+        const textEl = document.getElementById('copyBtnText');
+        textEl.textContent = "Copied!";
+        setTimeout(() => { textEl.textContent = "Copy"; }, 2000);
+      });
+    }
+
+    // Simulated Replay Sandbox Live Runner
+    let isReplaying = false;
+    function runSimulatedReplay() {
+      if (isReplaying) return;
+      isReplaying = true;
+
+      const btn = document.getElementById('triggerReplayBtn');
+      const label = document.getElementById('replayBtnLabel');
+      const icon = document.getElementById('replayIcon');
+      const badge = document.getElementById('replaySummaryBadge');
+      const container = document.getElementById('ticksContainer');
+
+      label.textContent = "Replaying in Sandbox...";
+      icon.classList.add('animate-spin');
+      btn.classList.add('opacity-80');
+
+      const runs = [
+        { status: 'rust', latency: '142ms' },
+        { status: 'rust', latency: '140ms' },
+        { status: 'rust', latency: '145ms' },
+        { status: 'rust', latency: '141ms' },
+        { status: 'teal', latency: '131ms' },
+        { status: 'rust', latency: '144ms' },
+        { status: 'rust', latency: '138ms' },
+        { status: 'rust', latency: '143ms' },
+        { status: 'amber', latency: '165ms' },
+        { status: 'rust', latency: '141ms' },
+      ];
+
+      // Clear ticks with placeholder pulse
+      container.innerHTML = '';
+      for (let i = 1; i <= 10; i++) {
+        const placeholder = document.createElement('div');
+        placeholder.className = "h-10 rounded bg-card/50 border border-borderDark flex items-center justify-center font-mono text-[11px] text-muted animate-pulse";
+        placeholder.textContent = `#${i}`;
+        container.appendChild(placeholder);
+      }
+
+      let current = 0;
+      const interval = setInterval(() => {
+        if (current < 10) {
+          const run = runs[current];
+          const el = container.children[current];
+          el.classList.remove('bg-card/50', 'text-muted', 'animate-pulse');
+
+          if (run.status === 'rust') {
+            el.className = "h-10 rounded bg-rust flex flex-col items-center justify-center font-mono text-[11px] font-bold text-ink cursor-pointer hover:ring-2 hover:ring-rust transition-all scale-105";
+          } else if (run.status === 'teal') {
+            el.className = "h-10 rounded bg-card border border-teal text-teal flex flex-col items-center justify-center font-mono text-[11px] font-bold cursor-pointer hover:ring-2 hover:ring-teal transition-all scale-105";
+          } else {
+            el.className = "h-10 rounded bg-amber flex flex-col items-center justify-center font-mono text-[11px] font-bold text-ink cursor-pointer hover:ring-2 hover:ring-amber transition-all scale-105";
+          }
+
+          setTimeout(() => el.classList.remove('scale-105'), 150);
+          current++;
+        } else {
+          clearInterval(interval);
+          isReplaying = false;
+          label.textContent = "Re-Run 10x Stochastic Sandbox";
+          icon.classList.remove('animate-spin');
+          btn.classList.remove('opacity-80');
+          badge.textContent = "8/10 REPRODUCED IDENTICAL FAILURE";
+        }
+      }, 120);
+    }
+  </script>
+
+</body>
+</html>

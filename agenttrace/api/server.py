@@ -46,15 +46,36 @@ def create_app() -> FastAPI:
 
     # Mount static directory for Dashboard
     static_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "static")
+    if not os.path.exists(static_dir):
+        static_dir = os.path.join(os.getcwd(), "static")
+
     if os.path.exists(static_dir):
         app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
         @app.get("/", include_in_schema=False)
-        def serve_dashboard():
+        def serve_landing_page():
+            landing_path = os.path.join(static_dir, "landing.html")
+            if os.path.exists(landing_path):
+                return FileResponse(landing_path)
             index_path = os.path.join(static_dir, "index.html")
             if os.path.exists(index_path):
                 return FileResponse(index_path)
-            return {"message": "AgentTrace API is active. UI dashboard index.html not found."}
+            return {"message": "AgentTrace API is active. Landing page not found."}
+
+        @app.get("/landing", include_in_schema=False)
+        def serve_landing():
+            landing_path = os.path.join(static_dir, "landing.html")
+            if os.path.exists(landing_path):
+                return FileResponse(landing_path)
+            return {"message": "Landing page not found."}
+
+        @app.get("/console", include_in_schema=False)
+        @app.get("/app", include_in_schema=False)
+        def serve_console():
+            index_path = os.path.join(static_dir, "index.html")
+            if os.path.exists(index_path):
+                return FileResponse(index_path)
+            return {"message": "AgentTrace Console index.html not found."}
 
     return app
 

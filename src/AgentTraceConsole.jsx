@@ -756,15 +756,23 @@ export default function AgentTraceConsole() {
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const saved = localStorage.getItem("agenttrace_auth_user");
-      return saved ? JSON.parse(saved) : null;
+      if (saved) return JSON.parse(saved);
     } catch {
-      return null;
+      // fallback
     }
+    return {
+      email: "investigator@agenttrace.io",
+      role: "Lead Agent Investigator",
+      name: "Lead Investigator"
+    };
   });
 
-  const [authEmail, setAuthEmail] = useState("investigator@agenttrace.io");
-  const [authPassword, setAuthPassword] = useState("agenttrace2026!");
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
   const [authError, setAuthError] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [incidents, setIncidents] = useState(INITIAL_INCIDENTS);
   const [selectedIncidentId, setSelectedIncidentId] = useState(INITIAL_INCIDENTS[0].id);
@@ -775,24 +783,40 @@ export default function AgentTraceConsole() {
 
   // Authentication Handlers
   const handleQuickLogin = (email = "investigator@agenttrace.io", role = "Lead Agent Investigator") => {
-    const userObj = { email, role, name: "Evaluator Demo" };
-    localStorage.setItem("agenttrace_auth_user", JSON.stringify(userObj));
+    const formattedName = email.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, l => l.toUpperCase()) || "Operator";
+    const userObj = { email, role, name: formattedName };
+    if (rememberMe) {
+      localStorage.setItem("agenttrace_auth_user", JSON.stringify(userObj));
+    }
     setCurrentUser(userObj);
     setAuthError("");
   };
 
   const handleManualLogin = (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
+    setAuthError("");
+
+    const email = authEmail.trim();
+    if (!email) {
+      setAuthError("Work email is required.");
+      return;
+    }
     if (!authPassword) {
       setAuthError("Password is required.");
       return;
     }
-    if (authPassword !== "agenttrace2026!") {
-      setAuthError("Invalid credentials. Use password: agenttrace2026!");
-      return;
-    }
-    const role = authEmail.includes("admin") ? "Platform Admin" : "Lead Agent Investigator";
-    handleQuickLogin(authEmail || "investigator@agenttrace.io", role);
+
+    setIsSubmitting(true);
+    setTimeout(() => {
+      const role = email.toLowerCase().includes("admin") ? "Platform Admin" : "Lead Agent Investigator";
+      const name = email.split("@")[0].replace(/[._-]/g, " ").replace(/\b\w/g, l => l.toUpperCase()) || "Operator";
+      const userObj = { email, role, name };
+      if (rememberMe) {
+        localStorage.setItem("agenttrace_auth_user", JSON.stringify(userObj));
+      }
+      setCurrentUser(userObj);
+      setIsSubmitting(false);
+    }, 200);
   };
 
   const handleLogout = () => {
@@ -906,97 +930,6 @@ export default function AgentTraceConsole() {
     }
   };
 
-  // If not authenticated, display the Case File Login Gate
-  if (!currentUser) {
-    return (
-      <div className="flex h-screen w-full items-center justify-center bg-[#11141B] text-[#F6F4EF] font-sans antialiased p-4">
-        <div className="w-full max-w-md bg-[#1A1E27] border border-[#252B37] rounded-xl p-7 shadow-2xl space-y-6">
-          
-          {/* Terminal Header */}
-          <div className="flex items-center space-x-3 border-b border-[#252B37] pb-4">
-            <div className="w-3 h-3 rounded-full bg-[#4FB8A6] ring-4 ring-[#4FB8A6]/20"></div>
-            <div>
-              <div className="flex items-center space-x-2">
-                <span className="font-semibold text-base tracking-tight text-[#F6F4EF]">AgentTrace</span>
-                <span className="font-mono text-[10px] text-[#8B93A3] bg-[#11141B] px-1.5 py-0.5 rounded border border-[#252B37]">terminal-auth</span>
-              </div>
-              <p className="text-xs text-[#8B93A3] mt-0.5 font-mono">Forensic Replay & Failure Investigator</p>
-            </div>
-          </div>
-
-          {/* Dummy Credentials Banner (For Evaluators & Reviewers) */}
-          <div className="bg-[#11141B] p-4 rounded-lg border border-[#252B37] space-y-2 font-mono text-xs">
-            <div className="flex items-center justify-between text-[#4FB8A6] font-semibold text-[11px] pb-1 border-b border-[#252B37]">
-              <span>EVALUATOR CREDENTIALS</span>
-              <span className="text-[10px] text-[#8B93A3]">demo access</span>
-            </div>
-            <div className="flex justify-between items-center text-[#F6F4EF]">
-              <span className="text-[#8B93A3]">Email:</span>
-              <span className="text-[#4FB8A6] select-all font-semibold">investigator@agenttrace.io</span>
-            </div>
-            <div className="flex justify-between items-center text-[#F6F4EF]">
-              <span className="text-[#8B93A3]">Password:</span>
-              <span className="text-[#E8A33D] select-all font-semibold">agenttrace2026!</span>
-            </div>
-          </div>
-
-          {/* Quick Login Button */}
-          <button
-            onClick={() => handleQuickLogin("investigator@agenttrace.io", "Lead Agent Investigator")}
-            className="w-full py-2.5 px-4 bg-[#4FB8A6] hover:bg-[#45a393] text-[#11141B] font-mono font-semibold text-xs rounded transition-colors flex items-center justify-center space-x-2 shadow-lg shadow-[#4FB8A6]/10"
-          >
-            <span>Enter Console as Lead Investigator</span>
-            <span>→</span>
-          </button>
-
-          <div className="relative flex items-center justify-center">
-            <div className="border-t border-[#252B37] w-full"></div>
-            <span className="bg-[#1A1E27] px-3 font-mono text-[10px] text-[#8B93A3] absolute">or sign in manually</span>
-          </div>
-
-          {/* Manual Login Form */}
-          <form onSubmit={handleManualLogin} className="space-y-4">
-            {authError && (
-              <div className="text-xs font-mono text-[#C2542E] bg-[#C2542E]/10 p-2.5 rounded border border-[#C2542E]/30">
-                {authError}
-              </div>
-            )}
-
-            <div className="space-y-1.5">
-              <label className="block text-xs font-mono text-[#8B93A3]">Operator ID / Email</label>
-              <input
-                type="email"
-                value={authEmail}
-                onChange={(e) => setAuthEmail(e.target.value)}
-                required
-                className="w-full bg-[#11141B] text-xs font-mono text-[#F6F4EF] px-3 py-2 rounded border border-[#252B37] focus:outline-none focus:border-[#4FB8A6]"
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="block text-xs font-mono text-[#8B93A3]">Access Password</label>
-              <input
-                type="password"
-                value={authPassword}
-                onChange={(e) => setAuthPassword(e.target.value)}
-                required
-                className="w-full bg-[#11141B] text-xs font-mono text-[#F6F4EF] px-3 py-2 rounded border border-[#252B37] focus:outline-none focus:border-[#4FB8A6]"
-              />
-            </div>
-
-            <button
-              type="submit"
-              className="w-full py-2 px-4 bg-[#141720] hover:bg-[#202532] text-[#F6F4EF] border border-[#252B37] font-mono text-xs rounded transition-colors"
-            >
-              Authenticate Terminal
-            </button>
-          </form>
-
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex h-screen w-full bg-[#11141B] text-[#F6F4EF] font-sans antialiased overflow-hidden select-none">
       
@@ -1007,27 +940,28 @@ export default function AgentTraceConsole() {
         
         {/* Top Branding / Console Header */}
         <div className="px-4 py-3 border-b border-[#252B37] flex items-center justify-between">
-          <div className="flex items-center space-x-2.5">
+          <a href="/" title="Return to Product Landing Page" className="flex items-center space-x-2.5 group cursor-pointer">
             <div className="w-2.5 h-2.5 rounded-full bg-[#4FB8A6] ring-4 ring-[#4FB8A6]/20"></div>
-            <span className="font-sans font-bold text-sm tracking-tight text-[#F6F4EF]">AgentTrace</span>
+            <span className="font-sans font-bold text-sm tracking-tight text-[#F6F4EF] group-hover:text-[#4FB8A6] transition-colors">AgentTrace</span>
             <span className="font-mono text-[10px] text-[#4FB8A6] bg-[#1A1E27] px-1.5 py-0.5 rounded border border-[#252B37]">live</span>
-          </div>
+          </a>
           
-          {/* User Session & Logout */}
+          {/* Active Session & Overview Link */}
           <div className="flex items-center space-x-2.5">
             <div className="flex items-center space-x-1.5 text-xs text-[#8B93A3]">
               <span className="w-1.5 h-1.5 rounded-full bg-[#4FB8A6]"></span>
-              <span className="font-mono text-[11px] text-[#F6F4EF]" title={currentUser.email}>
-                {currentUser.email.split('@')[0]}
+              <span className="font-mono text-[11px] text-[#F6F4EF]" title={currentUser ? currentUser.email : "investigator@agenttrace.io"}>
+                {currentUser ? currentUser.email.split('@')[0] : "investigator"}
               </span>
             </div>
-            <button
-              onClick={handleLogout}
-              title="Sign out of investigator session"
-              className="px-2 py-0.5 rounded text-[11px] font-sans font-medium text-[#8B93A3] hover:text-[#F6F4EF] bg-[#1A1E27] hover:bg-[#252B37] border border-[#252B37] transition-colors"
+            <a
+              href="/"
+              title="Return to Product Overview"
+              className="px-2 py-0.5 rounded text-[11px] font-sans font-medium text-[#8B93A3] hover:text-[#4FB8A6] bg-[#1A1E27] hover:bg-[#252B37] border border-[#252B37] transition-colors flex items-center gap-1"
             >
-              Sign out
-            </button>
+              <svg className="w-3 h-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+              <span>Overview</span>
+            </a>
           </div>
         </div>
 

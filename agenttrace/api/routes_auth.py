@@ -53,7 +53,7 @@ def login(req: LoginRequest):
     if not user_match:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials. Use investigator@agenttrace.io / agenttrace2026!"
+            detail="Invalid credentials. Please verify your email and password."
         )
 
     return {

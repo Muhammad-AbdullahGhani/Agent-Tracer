@@ -8,7 +8,10 @@ class Settings(BaseSettings):
     API_V1_PREFIX: str = "/api"
     
     # Storage
-    DATABASE_URL: str = os.getenv("AGENTTRACE_DB_URL", "sqlite:///./agenttrace.db")
+    DATABASE_URL: str = os.getenv(
+        "AGENTTRACE_DB_URL",
+        "sqlite:////tmp/agenttrace.db" if os.getenv("VERCEL") else "sqlite:///./agenttrace.db"
+    )
     
     # Replay Configuration
     DEFAULT_REPLAY_COUNT: int = 10
